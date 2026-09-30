@@ -1,12 +1,25 @@
 import logging
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
+from app.asis_client import AsisError
+
 logger = logging.getLogger("app.errors")
 
 def register_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(AsisError)
+    async def asis_error_handler(request: Request, exc: AsisError):
+        logger.warning("ASIS error on %s %s: %s", request.method, request.url.path, exc)
+        return JSONResponse(status_code=502, content={"detail": f"ASIS error: {exc}"})
+
+    @app.exception_handler(httpx.HTTPError)
+    async def asis_network_error_handler(request: Request, exc: httpx.HTTPError):
+        logger.warning("Network error on %s %s: %s", request.method, request.url.path, exc)
+        return JSONResponse(status_code=502, content={"detail": "Cannot reach ASIS"})
+
     @app.exception_handler(IntegrityError)
     async def integrity_error_handler(request: Request, exc: IntegrityError):
         logger.warning("Integrity error on %s %s: %s", request.method, request.url.path, exc.orig)

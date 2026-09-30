@@ -1,13 +1,14 @@
 from fastapi import Depends, FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.middleware.CORS_middleware import register_cors
 from app.middleware.error_handler import register_exception_handlers
 
 from app.routes import (
+    asis_route,
     auth_route,
     branch_route,
     category_route,
@@ -19,17 +20,7 @@ from app.routes import (
 
 app = FastAPI(title="CORA API")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+register_cors(app)
 register_exception_handlers(app)
 
 for module in (
@@ -40,6 +31,7 @@ for module in (
     branch_route,
     user_route,
     customer_visit_route,
+    asis_route,
 ):
     app.include_router(module.router)
 
