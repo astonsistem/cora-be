@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.user_photos import UserPhotos
 from app.models.users import UserRole, Users
 from app.schemas.user_schema import UserCreate, UserUpdate
 from app.security import hash_password
@@ -49,6 +50,28 @@ def update_user(db: Session, user: Users, data: UserUpdate) -> Users:
     db.commit()
     db.refresh(user)
     return user
+
+def get_photo(db: Session, user_id: uuid.UUID) -> UserPhotos | None:
+    return db.get(UserPhotos, user_id)
+
+def save_photo(db: Session, user: Users, content_type: str, data: bytes) -> Users:
+    photo = db.get(UserPhotos, user.user_id)
+    if photo:
+        photo.content_type = content_type
+        photo.data = data
+    else:
+        db.add(UserPhotos(user_id=user.user_id, content_type=content_type, data=data))
+    user.photo_url = f"/users/{user.user_id}/photo"
+    db.commit()
+    db.refresh(user)
+    return user
+
+def delete_photo(db: Session, user: Users) -> None:
+    photo = db.get(UserPhotos, user.user_id)
+    if photo:
+        db.delete(photo)
+    user.photo_url = None
+    db.commit()
 
 def delete_user(db: Session, user: Users) -> None:
     db.delete(user)
