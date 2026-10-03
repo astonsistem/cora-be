@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
@@ -10,6 +11,7 @@ from app.models.users import UserRole, Users
 from app.schemas.customer_visit_schema import (
     CustomerVisitCreate,
     CustomerVisitResponse,
+    CustomerVisitSummary,
     CustomerVisitUpdate,
 )
 from app.services import customer_visit_service
@@ -29,14 +31,26 @@ def _get_or_404(db: Session, visit_id: uuid.UUID, current_user: Users):
 @router.get("/", response_model=list[CustomerVisitResponse])
 def list_visits(
     user_id: uuid.UUID | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
     current_user: Users = Depends(get_current_user),
 ):
-    if current_user.user_role == UserRole.sales:
-        user_id = current_user.user_id
-    return customer_visit_service.get_all(db, user_id=user_id, skip=skip, limit=limit)
+    return customer_visit_service.get_all(
+        db, current_user, user_id=user_id, date_from=date_from, date_to=date_to, skip=skip, limit=limit
+    )
+
+
+@router.get("/summary", response_model=CustomerVisitSummary)
+def visit_summary(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
+):
+    return customer_visit_service.get_summary(db, current_user, date_from=date_from, date_to=date_to)
 
 
 @router.get("/{visit_id}", response_model=CustomerVisitResponse)

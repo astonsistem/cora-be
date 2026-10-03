@@ -5,7 +5,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.middleware.auth_middleware import admin_only
+from app.middleware.auth_middleware import admin_only, get_current_user
+from app.models.users import UserRole, Users
 from app.schemas.user_schema import UserCreate, UserResponse, UserUpdate
 from app.services import user_service
 
@@ -18,13 +19,25 @@ def _get_or_404(db: Session, user_id: uuid.UUID):
     return user
 
 
-@router.get("/", response_model=list[UserResponse], dependencies=[Depends(admin_only)])
-def list_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    return user_service.get_all(db, skip=skip, limit=limit)
+@router.get("/", response_model=list[UserResponse])
+def list_users(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
+):
+    # OM: semua user, BM: user di branch-nya, sales: dirinya sendiri
+    return user_service.get_all(db, current_user, skip=skip, limit=limit)
 
 
-@router.get("/{user_id}", response_model=UserResponse, dependencies=[Depends(admin_only)])
-def get_user(user_id: uuid.UUID, db: Session = Depends(get_db)):
+@router.get("/{user_id}", response_model=UserResponse)
+def get_user(
+    user_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
+):
+    if current_user.user_role != UserRole.operasional_manager and current_user.user_id != user_id:
+        raise HTTPException(status_code=403, detail="You do not have permission to perform this action")
     return _get_or_404(db, user_id)
 
 

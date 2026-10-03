@@ -30,3 +30,8 @@ class CustomerVisitResponse(CustomerVisitBase):
     posted_to_asis_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class CustomerVisitSummary(BaseModel):
+    total_visits: int
+    total_customers: int

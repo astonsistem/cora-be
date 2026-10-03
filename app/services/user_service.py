@@ -3,12 +3,19 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.users import Users
+from app.models.users import UserRole, Users
 from app.schemas.user_schema import UserCreate, UserUpdate
 from app.security import hash_password
 
-def get_all(db: Session, skip: int = 0, limit: int = 100) -> list[Users]:
-    return list(db.scalars(select(Users).offset(skip).limit(limit)))
+def get_all(db: Session, current_user: Users, skip: int = 0, limit: int = 100) -> list[Users]:
+    query = select(Users)
+    if current_user.user_role == UserRole.sales or (
+        current_user.user_role == UserRole.branch_manager and current_user.branch_id is None
+    ):
+        query = query.where(Users.user_id == current_user.user_id)
+    elif current_user.user_role == UserRole.branch_manager:
+        query = query.where(Users.branch_id == current_user.branch_id)
+    return list(db.scalars(query.offset(skip).limit(limit)))
 
 def get_by_id(db: Session, user_id: uuid.UUID) -> Users | None:
     return db.get(Users, user_id)
