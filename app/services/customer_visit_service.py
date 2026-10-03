@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import distinct, func, select
+from sqlalchemy import and_, distinct, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.customer_visits import CustomerVisits
@@ -11,24 +11,29 @@ from app.schemas.customer_visit_schema import CustomerVisitCreate, CustomerVisit
 def _scoped(query, current_user: Users):
     """Batasi query ke visit yang boleh dilihat current_user.
 
-    sales: miliknya sendiri, branch_manager: visit sales di branch-nya,
-    operasional_manager: visit sales di company-nya.
-    Mengembalikan None kalau user tidak punya cakupan (branch/company kosong).
+    sales: miliknya sendiri, branch_manager: miliknya sendiri + visit sales di
+    branch-nya, operasional_manager: miliknya sendiri + visit sales di company-nya.
     """
+    own = CustomerVisits.user_id == current_user.user_id
     if current_user.user_role == UserRole.sales:
-        return query.where(CustomerVisits.user_id == current_user.user_id)
+        return query.where(own)
 
-    query = query.join(Users, CustomerVisits.user_id == Users.user_id).where(
-        Users.user_role == UserRole.sales
-    )
+    query = query.join(Users, CustomerVisits.user_id == Users.user_id)
     if current_user.user_role == UserRole.branch_manager:
-        if current_user.branch_id is None:
-            return None
-        return query.where(Users.branch_id == current_user.branch_id)
-
-    if current_user.company_id is None:
-        return None
-    return query.where(Users.company_id == current_user.company_id)
+        in_scope = (
+            Users.branch_id == current_user.branch_id
+            if current_user.branch_id is not None
+            else None
+        )
+    else:
+        in_scope = (
+            Users.company_id == current_user.company_id
+            if current_user.company_id is not None
+            else None
+        )
+    if in_scope is None:
+        return query.where(own)
+    return query.where(or_(own, and_(Users.user_role == UserRole.sales, in_scope)))
 
 
 def _in_period(query, date_from: date | None, date_to: date | None):
@@ -49,8 +54,6 @@ def get_all(
     limit: int = 100,
 ) -> list[CustomerVisits]:
     query = _scoped(select(CustomerVisits).order_by(CustomerVisits.posted_at.desc()), current_user)
-    if query is None:
-        return []
     if user_id:
         query = query.where(CustomerVisits.user_id == user_id)
     query = _in_period(query, date_from, date_to)
@@ -70,8 +73,6 @@ def get_summary(
         ).select_from(CustomerVisits),
         current_user,
     )
-    if query is None:
-        return {"total_visits": 0, "total_customers": 0}
     total_visits, total_customers = db.execute(_in_period(query, date_from, date_to)).one()
     return {"total_visits": total_visits, "total_customers": total_customers}
 
