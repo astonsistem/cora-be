@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,8 @@ from app.schemas.user_schema import UserCreate, UserResponse, UserUpdate
 from app.services import user_service
 
 router = APIRouter(prefix="/users", tags=["User"])
+
+MAX_PHOTO_BYTES = 2 * 1024 * 1024
 
 def _get_or_404(db: Session, user_id: uuid.UUID):
     user = user_service.get_by_id(db, user_id)
@@ -36,9 +38,70 @@ def get_user(
     db: Session = Depends(get_db),
     current_user: Users = Depends(get_current_user),
 ):
+    _require_self_or_om(current_user, user_id)
+    return _get_or_404(db, user_id)
+
+
+def _require_self_or_om(current_user: Users, user_id: uuid.UUID):
     if current_user.user_role != UserRole.operasional_manager and current_user.user_id != user_id:
         raise HTTPException(status_code=403, detail="You do not have permission to perform this action")
-    return _get_or_404(db, user_id)
+
+
+def _sniff_image_type(data: bytes) -> str | None:
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+@router.get("/{user_id}/photo")
+def get_user_photo(user_id: uuid.UUID, db: Session = Depends(get_db)):
+    # Tanpa auth supaya bisa dipakai langsung di <img src>; user_id berupa UUID.
+    photo = user_service.get_photo(db, user_id)
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    return Response(
+        content=photo.data,
+        media_type=photo.content_type,
+        headers={"Cache-Control": "private, max-age=0, must-revalidate"},
+    )
+
+
+@router.put("/{user_id}/photo", response_model=UserResponse)
+async def upload_user_photo(
+    user_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
+):
+    _require_self_or_om(current_user, user_id)
+    user = _get_or_404(db, user_id)
+
+    data = await file.read(MAX_PHOTO_BYTES + 1)
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(data) > MAX_PHOTO_BYTES:
+        raise HTTPException(status_code=413, detail=f"Photo must be at most {MAX_PHOTO_BYTES // (1024 * 1024)} MB")
+
+    content_type = _sniff_image_type(data)
+    if not content_type:
+        raise HTTPException(status_code=415, detail="Photo must be a JPEG, PNG, or WebP image")
+
+    return user_service.save_photo(db, user, content_type, data)
+
+
+@router.delete("/{user_id}/photo", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user_photo(
+    user_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
+):
+    _require_self_or_om(current_user, user_id)
+    user = _get_or_404(db, user_id)
+    user_service.delete_photo(db, user)
 
 
 @router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(admin_only)])
