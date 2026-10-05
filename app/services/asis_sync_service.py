@@ -5,11 +5,12 @@ from sqlalchemy.orm import Session
 
 from app.asis_client import AsisClient
 from app.models.branches import Branches
+from app.models.category import Category
 from app.models.companies import Companies
 
 COMPANY_FIELDS = ("company_code", "company_name", "company_address")
 BRANCH_FIELDS = ("branch_code", "branch_name", "branch_address")
-
+CATEGORY_FIELDS = ("name",)
 
 def _pick(item: dict, *keys: str):
     for key in keys:
@@ -50,6 +51,14 @@ def _parse_branch(item: dict) -> tuple[str, str | None, dict] | None:
             "branch_address": _pick(item, "address") or "",
         },
     )
+
+
+def _parse_category(item: dict) -> tuple[str, dict] | None:
+    asis_id = _pick(item, "id")
+    name = _pick(item, "name")
+    if asis_id is None or name is None:
+        return None
+    return str(asis_id), {"name": name}
 
 
 def _diff(obj, values: dict, fields: tuple[str, ...]) -> dict:
@@ -102,6 +111,40 @@ def _upsert_branches(
     return created, updated, without_company
 
 
+def _upsert_categories(db: Session, parsed: list[tuple[str, dict]]) -> tuple[int, int]:
+    existing = {}
+    legacy = {}  # kategori lokal lama yang belum punya ID ASIS, dicocokkan lewat nama
+    for c in db.scalars(select(Category)):
+        if c.asis_category_id:
+            existing[c.asis_category_id] = c
+        else:
+            legacy.setdefault(c.name.strip().lower(), c)
+
+    created = updated = 0
+    for asis_id, values in parsed:
+        category = existing.get(asis_id) or legacy.pop(values["name"].strip().lower(), None)
+        if category:
+            category.asis_category_id = asis_id
+            for key, value in values.items():
+                setattr(category, key, value)
+            existing[asis_id] = category
+            updated += 1
+        else:
+            category = Category(asis_category_id=asis_id, **values)
+            db.add(category)
+            existing[asis_id] = category
+            created += 1
+    return created, updated
+
+
+def sync_categories(db: Session, client: AsisClient) -> dict:
+    items = client.get_categories()
+    parsed = [p for p in map(_parse_category, items) if p]
+    created, updated = _upsert_categories(db, parsed)
+    db.commit()
+    return {"created": created, "updated": updated, "skipped": len(items) - len(parsed)}
+
+
 def sync_companies(db: Session, client: AsisClient) -> dict:
     items = client.get_companies()
     parsed = [p for p in map(_parse_company, items) if p]
@@ -128,11 +171,11 @@ def sync_all(db: Session, client: AsisClient | None = None) -> dict:
     return {
         "companies": sync_companies(db, client),
         "branches": sync_branches(db, client),
+        "categories": sync_categories(db, client),
     }
 
 
 def preview(db: Session, client: AsisClient | None = None) -> dict:
-    """Bandingkan data ASIS dengan database tanpa menyimpan apa pun."""
     client = client or AsisClient()
     local_companies = {c.asis_company_id: c for c in db.scalars(select(Companies))}
     local_branches = {b.asis_branch_id: b for b in db.scalars(select(Branches))}
@@ -168,19 +211,38 @@ def preview(db: Session, client: AsisClient | None = None) -> dict:
                 {"asis_id": asis_id, "branch_name": local.branch_name, "changes": changes}
             )
 
-    return {"companies": companies, "branches": branches}
+    local_categories = {c.asis_category_id: c for c in db.scalars(select(Category)) if c.asis_category_id}
+    categories = {"new": [], "changed": []}
+    for asis_id, values in filter(None, map(_parse_category, client.get_categories())):
+        local = local_categories.get(asis_id)
+        if not local:
+            categories["new"].append({"asis_id": asis_id, **values})
+            continue
+        changes = _diff(local, values, CATEGORY_FIELDS)
+        if changes:
+            categories["changed"].append({"asis_id": asis_id, "name": local.name, "changes": changes})
+
+    return {"companies": companies, "branches": branches, "categories": categories}
 
 
 def apply_selected(
     db: Session,
     company_ids: list[str],
     branch_ids: list[str],
+    category_ids: list[str] | None = None,
     client: AsisClient | None = None,
 ) -> None:
-    """Simpan hanya company dan branch yang dipilih, datanya diambil ulang dari ASIS."""
     client = client or AsisClient()
     wanted_companies = set(company_ids)
     wanted_branches = set(branch_ids)
+
+    asis_categories = {}
+    if category_ids is None or category_ids:
+        asis_categories = dict(filter(None, map(_parse_category, client.get_categories())))
+    wanted_categories = set(asis_categories) if category_ids is None else set(category_ids)
+    missing = sorted(wanted_categories - asis_categories.keys())
+    if missing:
+        raise ValueError(f"Category tidak ditemukan di ASIS: {', '.join(missing)}")
 
     asis_companies = {}
     if wanted_companies:
@@ -207,7 +269,7 @@ def apply_selected(
     )
     if orphans:
         raise ValueError(
-            "Company untuk branch ini belum ada di database, pilih company-nya juga: "
+            "Belum ada company untuk branch ini, pilih company: "
             + ", ".join(orphans)
         )
 
@@ -215,4 +277,5 @@ def apply_selected(
     _upsert_companies(db, [(i, asis_companies[i]) for i in sorted(wanted_companies)], now)
     db.flush()
     _upsert_branches(db, [asis_branches[i] for i in sorted(wanted_branches)], now)
+    _upsert_categories(db, [(i, asis_categories[i]) for i in sorted(wanted_categories)])
     db.commit()
