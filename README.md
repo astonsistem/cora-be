@@ -121,7 +121,7 @@ Prasyarat: **Python 3.10+** dan **PostgreSQL** yang sudah berjalan.
    alembic upgrade head
    ```
 
-6. Isi data awal (*category*, *source*, dan tiga akun contoh).
+6. Isi data awal (*source* dan tiga akun contoh). Data *category*, *company*, dan *branch* diambil dari ASIS melalui fitur Sync ASIS oleh Operasional Manager.
 
    ```bash
    python -m app.seeders.seed

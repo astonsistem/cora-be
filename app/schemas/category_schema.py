@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 class CategoryBase(BaseModel):
     name: str
     description: str | None = None
+    asis_category_id: str | None = None
 
 class CategoryCreate(CategoryBase):
     pass
@@ -13,6 +14,7 @@ class CategoryCreate(CategoryBase):
 class CategoryUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
+    asis_category_id: str | None = None
 
 class CategoryResponse(CategoryBase):
     model_config = ConfigDict(from_attributes=True)

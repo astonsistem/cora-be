@@ -3,19 +3,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.models import Category, Sources, Users
+from app.models import Sources, Users
 from app.models.users import UserRole
 from app.security import hash_password
 
 db = SessionLocal()
 
 db.query(Users).delete()
-
-CATEGORIES = [
-    {"name": "Retail", "description": "Pelanggan perorangan"},
-    {"name": "Distributor"},
-    {"name": "Corporate"},
-]
 
 SOURCES = [
     {"name": "Website"},
@@ -65,12 +59,11 @@ def seed_users(db: Session) -> int:
 
 def main() -> None:
     with SessionLocal() as db:
-        n_cat = seed_simple(db, Category, CATEGORIES)
         n_src = seed_simple(db, Sources, SOURCES)
         n_users = seed_users(db)
         db.commit()
 
-    print(f"Category baru: {n_cat}, Sources baru: {n_src}, Users baru: {n_users}")
+    print(f"Sources baru: {n_src}, Users baru: {n_users}")
 
 
 if __name__ == "__main__":

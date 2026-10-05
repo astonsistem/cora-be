@@ -21,9 +21,9 @@ def preview_asis(db: Session = Depends(get_db)):
 
 @router.post("/apply", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(admin_only)])
 def apply_asis(data: AsisApplyRequest, db: Session = Depends(get_db)):
-    if not data.company_ids and not data.branch_ids:
+    if not data.company_ids and not data.branch_ids and data.category_ids == []:
         raise HTTPException(status_code=400, detail="Tidak ada data yang dipilih")
     try:
-        asis_sync_service.apply_selected(db, data.company_ids, data.branch_ids)
+        asis_sync_service.apply_selected(db, data.company_ids, data.branch_ids, data.category_ids)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

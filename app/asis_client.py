@@ -8,6 +8,9 @@ load_dotenv()
 LOGIN_PATH = "/auth/login"
 COMPANY_PATH = "/super/company/company"
 BRANCH_PATH = "/super/branch/branch"
+CATEGORY_PATH = "/company/partner_category/dropdown"
+CONNECT_TIMEOUT = 5
+CONNECT_RETRIES = 3
 
 class AsisError(Exception):
     pass
@@ -36,12 +39,18 @@ class AsisClient:
         self.username = os.getenv("ASIS_USERNAME")
         self.password = os.getenv("ASIS_PASSWORD")
         self._token = None
+        # Koneksi ke server ASIS kadang gagal tersambung, jadi connect timeout dibuat
+        # pendek dan koneksi yang gagal dicoba ulang. Satu client dipakai ulang
+        # supaya satu operasi tidak membuka banyak koneksi baru.
+        self._http = httpx.Client(
+            transport=httpx.HTTPTransport(retries=CONNECT_RETRIES),
+            timeout=httpx.Timeout(30, connect=CONNECT_TIMEOUT),
+        )
 
     def login(self) -> str:
-        res = httpx.post(
+        res = self._http.post(
             self.login_url,
             data={"grant_type": "password", "username": self.username, "password": self.password},
-            timeout=15,
         )
         if res.status_code >= 400:
             raise AsisError(f"Login gagal: HTTP {res.status_code}")
@@ -56,10 +65,9 @@ class AsisClient:
         for attempt in (1, 2):
             if not self._token:
                 self.login()
-            res = httpx.get(
+            res = self._http.get(
                 f"{self.api_url}/{path.lstrip('/')}",
                 headers={"Authorization": f"Bearer {self._token}", "Accept": "application/json"},
-                timeout=30,
             )
             if res.status_code == 401 and attempt == 1:
                 self._token = None
@@ -73,3 +81,6 @@ class AsisClient:
 
     def get_branches(self) -> list[dict]:
         return extract_items(self._get(BRANCH_PATH))
+
+    def get_categories(self) -> list[dict]:
+        return extract_items(self._get(CATEGORY_PATH))
