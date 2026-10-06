@@ -28,6 +28,6 @@ def create_access_token(user_id: uuid.UUID) -> str:
 
 
 def decode_access_token(token: str) -> uuid.UUID:
-    """Raise jwt.PyJWTError kalau token tidak valid atau kedaluwarsa."""
+    """Raise jwt.PyJWTError kalau token tidak valid atau kedaluwarsa."""    
     payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     return uuid.UUID(payload["sub"])

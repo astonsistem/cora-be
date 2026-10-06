@@ -39,9 +39,6 @@ class AsisClient:
         self.username = os.getenv("ASIS_USERNAME")
         self.password = os.getenv("ASIS_PASSWORD")
         self._token = None
-        # Koneksi ke server ASIS kadang gagal tersambung, jadi connect timeout dibuat
-        # pendek dan koneksi yang gagal dicoba ulang. Satu client dipakai ulang
-        # supaya satu operasi tidak membuka banyak koneksi baru.
         self._http = httpx.Client(
             transport=httpx.HTTPTransport(retries=CONNECT_RETRIES),
             timeout=httpx.Timeout(30, connect=CONNECT_TIMEOUT),
