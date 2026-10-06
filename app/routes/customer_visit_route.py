@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.middleware.auth_middleware import admin_only, get_current_user
+from app.middleware.auth_middleware import get_current_user, manager_only
 from app.models.users import UserRole, Users
 from app.schemas.customer_visit_schema import (
     CustomerVisitCreate,
@@ -84,7 +84,7 @@ def create_visit(
         raise HTTPException(status_code=400, detail="Invalid source or category reference")
 
 
-@router.post("/{visit_id}/post-to-asis", response_model=CustomerVisitResponse, dependencies=[Depends(admin_only)])
+@router.post("/{visit_id}/post-to-asis", response_model=CustomerVisitResponse, dependencies=[Depends(manager_only)])
 def post_visit_to_asis(
     visit_id: uuid.UUID,
     db: Session = Depends(get_db),

@@ -41,3 +41,4 @@ def require_roles(*roles: UserRole):
     return checker
 
 admin_only = require_roles(UserRole.operasional_manager)
+manager_only = require_roles(UserRole.operasional_manager, UserRole.branch_manager)
