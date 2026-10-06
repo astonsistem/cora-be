@@ -7,13 +7,9 @@ from sqlalchemy.orm import Session
 from app.models.customer_visits import CustomerVisits
 from app.models.users import UserRole, Users
 from app.schemas.customer_visit_schema import CustomerVisitCreate, CustomerVisitUpdate
+from app.services import customer_service
 
 def _scoped(query, current_user: Users):
-    """Batasi query ke visit yang boleh dilihat current_user.
-
-    sales: miliknya sendiri, branch_manager: miliknya sendiri + visit sales di
-    branch-nya, operasional_manager: miliknya sendiri + visit sales di company-nya.
-    """
     own = CustomerVisits.user_id == current_user.user_id
     if current_user.user_role == UserRole.sales:
         return query.where(own)
@@ -43,6 +39,16 @@ def _in_period(query, date_from: date | None, date_to: date | None):
         query = query.where(CustomerVisits.posted_at < datetime.combine(date_to + timedelta(days=1), time.min))
     return query
 
+def _filtered(
+    current_user: Users,
+    user_id: uuid.UUID | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+):
+    query = _scoped(select(CustomerVisits), current_user)
+    if user_id:
+        query = query.where(CustomerVisits.user_id == user_id)
+    return _in_period(query, date_from, date_to)
 
 def get_all(
     db: Session,
@@ -53,12 +59,18 @@ def get_all(
     skip: int = 0,
     limit: int = 100,
 ) -> list[CustomerVisits]:
-    query = _scoped(select(CustomerVisits).order_by(CustomerVisits.posted_at.desc()), current_user)
-    if user_id:
-        query = query.where(CustomerVisits.user_id == user_id)
-    query = _in_period(query, date_from, date_to)
+    query = _filtered(current_user, user_id, date_from, date_to).order_by(CustomerVisits.posted_at.desc())
     return list(db.scalars(query.offset(skip).limit(limit)))
 
+def count_all(
+    db: Session,
+    current_user: Users,
+    user_id: uuid.UUID | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> int:
+    subquery = _filtered(current_user, user_id, date_from, date_to).subquery()
+    return db.scalar(select(func.count()).select_from(subquery)) or 0
 
 def get_summary(
     db: Session,
@@ -76,12 +88,28 @@ def get_summary(
     total_visits, total_customers = db.execute(_in_period(query, date_from, date_to)).one()
     return {"total_visits": total_visits, "total_customers": total_customers}
 
-
 def get_by_id(db: Session, visit_id: uuid.UUID) -> CustomerVisits | None:
     return db.get(CustomerVisits, visit_id)
 
-def create_visit(db: Session, data: CustomerVisitCreate, user_id: uuid.UUID) -> CustomerVisits:
-    visit = CustomerVisits(**data.model_dump(), user_id=user_id)
+def create_visit(db: Session, data: CustomerVisitCreate, user: Users) -> CustomerVisits:
+    if data.customer_id:
+        customer = customer_service.get_for_user(db, user, data.customer_id)
+        if customer is None:
+            raise ValueError("Customer tidak ditemukan di Master Customer")
+    else:
+        customer = customer_service.ensure_customer(
+            db, user, data.customer_name, data.phone, data.category_id, data.branch_id
+        )
+
+    values = data.model_dump(exclude={"customer_id", "branch_id"})
+    values.update(customer_id=customer.customer_id, customer_name=customer.name, phone=customer.phone or "")
+    if customer.asis_partner_id:
+        values.update(
+            is_posted_to_asis=True,
+            posted_to_asis_at=customer.posted_at,
+            asis_partner_id=customer.asis_partner_id,
+        )
+    visit = CustomerVisits(**values, user_id=user.user_id)
     db.add(visit)
     db.commit()
     db.refresh(visit)

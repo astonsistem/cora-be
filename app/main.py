@@ -13,6 +13,7 @@ from app.routes import (
     branch_route,
     category_route,
     company_route,
+    customer_route,
     customer_visit_route,
     source_route,
     user_route,
@@ -30,6 +31,7 @@ for module in (
     company_route,
     branch_route,
     user_route,
+    customer_route,
     customer_visit_route,
     asis_route,
 ):
