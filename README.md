@@ -12,6 +12,7 @@ Fitur utama:
   - Branch Manager dapat melihat kunjungan sales pada cabangnya.
   - Operasional Manager dapat melihat kunjungan sales pada perusahaannya.
 - **Master data**: *category*, *source*, *company*, dan *branch*. Seluruh pengguna yang telah masuk (*login*) dapat membaca data ini, tetapi hanya Operasional Manager yang dapat mengubahnya.
+- **Master Customer**: daftar customer per cabang yang ditarik dari ASIS (status *sudah diposting*) dan customer yang didaftarkan dari CORA (status *belum diposting*). Customer visit dipilih dari Master Customer, dan posting ke ASIS dilakukan dari customer, dengan pengecekan apakah customer tersebut sudah ada di ASIS.
 - **Manajemen pengguna** dan **foto profil** yang disimpan langsung di dalam basis data.
 - **Sinkronisasi ASIS**: mengambil data *company* dan *branch* dari sistem ASIS.
 
@@ -126,3 +127,5 @@ Prasyarat: **Python 3.10+** dan **PostgreSQL** yang sudah berjalan.
    ```bash
    python -m app.seeders.seed
    ```
+
+7. Setelah *company*, *branch*, dan *category* tersinkron, Operasional Manager dapat menarik Master Customer dari ASIS dengan `POST /customers/sync` (opsional dengan body `{"branch_id": "<id branch>"}` untuk satu cabang). Proses berjalan di *background* karena jumlah customer di ASIS besar (puluhan ribu); pantau lewat `GET /customers/sync/status`.
