@@ -44,6 +44,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=60
 ASIS_BASE_URL=http://host:port/asis
 ASIS_USERNAME=
 ASIS_PASSWORD=
+PUBLIC_API_KEY=
 ```
 
 | Variable | Wajib | Keterangan |
@@ -54,6 +55,7 @@ ASIS_PASSWORD=
 | `ASIS_BASE_URL` | Untuk fitur ASIS | URL dasar API ASIS yang digunakan untuk sinkronisasi *company* dan *branch*. Apabila kosong, *endpoint* `/asis` akan mengembalikan galat. |
 | `ASIS_USERNAME` | Untuk fitur ASIS | Nama pengguna untuk masuk ke API ASIS. |
 | `ASIS_PASSWORD` | Untuk fitur ASIS | Kata sandi untuk masuk ke API ASIS. |
+| `PUBLIC_API_KEY` | Untuk endpoint publik | Kunci untuk header `X-Api-Key` pada *endpoint* `/public`. Beberapa kunci dapat diisi dengan pemisah koma agar kunci dapat diganti tanpa menghentikan layanan. Apabila kosong, seluruh permintaan ke `/public` ditolak. |
 
 Perintah untuk membuat `SECRET_KEY` secara acak:
 
@@ -84,6 +86,22 @@ Akun yang dapat digunakan untuk masuk setelah seeder dijalankan:
 | `operasional` | `123456` | Operasional Manager |
 | `branch` | `123456` | Branch Manager |
 | `sales` | `123456` | Sales |
+
+Endpoint publik untuk kebutuhan *dashboard* eksternal tidak memakai token JWT, melainkan header `X-Api-Key`. Saat ini tersedia `GET /public/customer-visits/count` yang mengembalikan `{"count": <jumlah>}`. Seluruh parameter bersifat opsional dan digabung dengan logika AND: `date_from`, `date_to` (inklusif, berdasarkan waktu visit), `company_id`, `asis_company_id`, `branch_id`, dan `asis_branch_id`. Cabang sebuah visit ditentukan dari cabang customer-nya (cadangan: cabang user pembuat visit). ID yang tidak ditemukan menghasilkan 404, dan kunci yang salah menghasilkan 401.
+
+```bash
+curl -H "X-Api-Key: <kunci>" "http://127.0.0.1:8000/public/customer-visits/count?date_from=2026-10-01&date_to=2026-10-31&asis_branch_id=<id>"
+```
+
+Laporan aktivitas visit tersedia di `/reports` (memerlukan token JWT) dan seluruhnya mengikuti cakupan data tiap *role*: Operasional Manager melihat visit miliknya serta Sales dan Branch Manager di *company*-nya, Branch Manager melihat miliknya serta Sales di cabangnya, dan Sales hanya melihat visit miliknya. Seluruh parameter bersifat opsional: `date_from`, `date_to` (inklusif, berdasarkan waktu visit), dan `branch_id`.
+
+| Endpoint | Isi |
+|---|---|
+| `GET /reports/summary` | Total visit, total customer unik, jumlah user aktif, serta jumlah visit yang sudah dan belum diposting ke ASIS |
+| `GET /reports/visit-trend` | Jumlah visit dan customer unik per periode. Parameter tambahan `interval`: `day` (bawaan), `week`, atau `month`. Periode tanpa visit tetap ditampilkan dengan nilai 0 |
+| `GET /reports/category` | Jumlah visit per kategori beserta persentasenya |
+| `GET /reports/source` | Jumlah visit per sumber beserta persentasenya |
+| `GET /reports/sales-performance` | Jumlah visit, customer unik, visit terposting, dan visit terakhir per user, diurutkan dari visit terbanyak. Sales aktif tanpa visit tetap ditampilkan |
 
 ## 5. Installation
 

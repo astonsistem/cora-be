@@ -1,7 +1,7 @@
 import uuid
-from datetime import date, datetime, time, timedelta
+from datetime import date
 
-from sqlalchemy import and_, distinct, func, or_, select
+from sqlalchemy import distinct, func, select
 from sqlalchemy.orm import Session
 
 from app.exceptions import BadRequestError, ForbiddenError
@@ -10,6 +10,8 @@ from app.models.users import UserRole, Users
 from app.schemas.customer_visit_schema import CustomerVisitCreate
 from app.services.base_service import CrudService
 from app.services.customer_service import CustomerService
+from app.services.visit_period import VisitPeriod
+from app.services.visit_scope import VisitScope
 
 class CustomerVisitService(CrudService[CustomerVisits]):
     model = CustomerVisits
@@ -20,6 +22,7 @@ class CustomerVisitService(CrudService[CustomerVisits]):
         super().__init__(db)
         self.user = current_user
         self.customers = CustomerService(db, current_user)
+        self.scope = VisitScope(current_user)
 
     def get_or_404(self, obj_id) -> CustomerVisits:
         visit = super().get_or_404(obj_id)
@@ -27,39 +30,9 @@ class CustomerVisitService(CrudService[CustomerVisits]):
             raise ForbiddenError("You can only access your own visits")
         return visit
 
-    def _scope(self, query):
-        own = CustomerVisits.user_id == self.user.user_id
-        if self.user.user_role == UserRole.sales:
-            return query.where(own)
-
-        query = query.join(Users, CustomerVisits.user_id == Users.user_id)
-        if self.user.user_role == UserRole.branch_manager:
-            visible_roles = [UserRole.sales]
-            in_scope = (
-                Users.branch_id == self.user.branch_id
-                if self.user.branch_id is not None
-                else None
-            )
-        else:
-            visible_roles = [UserRole.sales, UserRole.branch_manager]
-            in_scope = (
-                Users.company_id == self.user.company_id
-                if self.user.company_id is not None
-                else None
-            )
-        if in_scope is None:
-            return query.where(own)
-        return query.where(or_(own, and_(Users.user_role.in_(visible_roles), in_scope)))
-
     @staticmethod
     def _in_period(query, date_from: date | None, date_to: date | None):
-        if date_from:
-            query = query.where(CustomerVisits.posted_at >= datetime.combine(date_from, time.min))
-        if date_to:
-            query = query.where(
-                CustomerVisits.posted_at < datetime.combine(date_to + timedelta(days=1), time.min)
-            )
-        return query
+        return VisitPeriod(date_from, date_to).apply(query)
 
     def _filtered(
         self,
@@ -67,7 +40,7 @@ class CustomerVisitService(CrudService[CustomerVisits]):
         date_from: date | None = None,
         date_to: date | None = None,
     ):
-        query = self._scope(select(CustomerVisits))
+        query = self.scope.apply(select(CustomerVisits))
         if user_id:
             query = query.where(CustomerVisits.user_id == user_id)
         return self._in_period(query, date_from, date_to)
@@ -93,7 +66,7 @@ class CustomerVisitService(CrudService[CustomerVisits]):
         return self.db.scalar(select(func.count()).select_from(subquery)) or 0
 
     def get_summary(self, date_from: date | None = None, date_to: date | None = None) -> dict:
-        query = self._scope(
+        query = self.scope.apply(
             select(
                 func.count(CustomerVisits.visit_id),
                 func.count(distinct(CustomerVisits.phone)),
