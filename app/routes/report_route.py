@@ -1,8 +1,10 @@
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
 from app.dependencies import get_report_service
+from app.schemas.query_params import PeriodParams
 from app.schemas.report_schema import (
     BreakdownItem,
     ReportFilter,
@@ -49,3 +51,11 @@ def report_sales_performance(
     service: ReportService = Depends(get_report_service),
 ):
     return service.sales_performance(criteria)
+
+@router.get("/sales-performance/{user_id}", response_model=SalesPerformanceItem)
+def report_sales_performance_by_id(
+    user_id: uuid.UUID,
+    criteria: Annotated[PeriodParams, Query()],
+    service: ReportService = Depends(get_report_service),
+):
+    return service.sales_performance_by_id(user_id, criteria)

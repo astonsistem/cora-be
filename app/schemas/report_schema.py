@@ -7,8 +7,20 @@ from pydantic import BaseModel
 from app.models.users import UserRole
 from app.schemas.query_params import PeriodParams
 
+ROLE_FILTERS = {
+    "sales": UserRole.sales,
+    "bm": UserRole.branch_manager,
+    "om": UserRole.operasional_manager,
+}
+
 class ReportFilter(PeriodParams):
     branch_id: uuid.UUID | None = None
+    user_id: uuid.UUID | None = None
+    role: Literal["all", "sales", "bm", "om"] | None = None
+
+    @property
+    def user_role(self) -> UserRole | None:
+        return ROLE_FILTERS.get(self.role)
 
 class TrendFilter(ReportFilter):
     interval: Literal["day", "week", "month"] | None = "day"

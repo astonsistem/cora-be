@@ -93,7 +93,7 @@ Endpoint publik untuk kebutuhan *dashboard* eksternal tidak memakai token JWT, m
 curl -H "X-Api-Key: <kunci>" "http://127.0.0.1:8000/public/customer-visits/count?date_from=2026-10-01&date_to=2026-10-31&asis_branch_id=<id>"
 ```
 
-Laporan aktivitas visit tersedia di `/reports` (memerlukan token JWT) dan seluruhnya mengikuti cakupan data tiap *role*: Operasional Manager melihat visit miliknya serta Sales dan Branch Manager di *company*-nya, Branch Manager melihat miliknya serta Sales di cabangnya, dan Sales hanya melihat visit miliknya. Seluruh parameter bersifat opsional: `date_from`, `date_to` (inklusif, berdasarkan waktu visit), dan `branch_id`.
+Laporan aktivitas visit tersedia di `/reports` (memerlukan token JWT) dan seluruhnya mengikuti cakupan data tiap *role*: Operasional Manager melihat visit miliknya serta Sales dan Branch Manager di *company*-nya, Branch Manager melihat miliknya serta Sales di cabangnya, dan Sales hanya melihat visit miliknya. Seluruh parameter bersifat opsional: `date_from`, `date_to` (inklusif, berdasarkan waktu visit), `branch_id`, `user_id` (hanya visit milik user tersebut; 404 apabila user tidak ada atau berada di luar cakupan *role* pemanggil), dan `role` (`all`, `sales`, `bm`, atau `om`; memfilter berdasarkan *role* user pembuat visit). Daftar user untuk pilihan filter dapat diambil dari `GET /users/?role=sales`, yang tetap mengikuti cakupan *role* pemanggil.
 
 | Endpoint | Isi |
 |---|---|
@@ -102,6 +102,7 @@ Laporan aktivitas visit tersedia di `/reports` (memerlukan token JWT) dan seluru
 | `GET /reports/category` | Jumlah visit per kategori beserta persentasenya |
 | `GET /reports/source` | Jumlah visit per sumber beserta persentasenya |
 | `GET /reports/sales-performance` | Jumlah visit, customer unik, visit terposting, dan visit terakhir per user, diurutkan dari visit terbanyak. Sales aktif tanpa visit tetap ditampilkan |
+| `GET /reports/sales-performance/{user_id}` | Performa satu user (objek tunggal dengan isi yang sama seperti satu baris di atas), mengikuti `date_from` dan `date_to`. User yang tidak ada atau berada di luar cakupan *role* pemanggil menghasilkan 404, sedangkan user yang terlihat tetapi tanpa visit menghasilkan baris bernilai 0 |
 
 ## 5. Installation
 

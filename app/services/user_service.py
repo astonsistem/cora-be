@@ -13,8 +13,16 @@ class UserService(CrudService[Users]):
     label = "User"
     invalid_reference_message = "Invalid company or branch reference"
 
-    def get_all_for(self, current_user: Users, skip: int = 0, limit: int = 100) -> list[Users]:
-        query = select(Users)
+    def get_all_for(
+        self,
+        current_user: Users,
+        skip: int = 0,
+        limit: int = 100,
+        role: UserRole | None = None,
+    ) -> list[Users]:
+        query = select(Users).order_by(Users.first_name, Users.last_name, Users.user_id)
+        if role is not None:
+            query = query.where(Users.user_role == role)
         if current_user.user_role == UserRole.sales or (
             current_user.user_role == UserRole.branch_manager and current_user.branch_id is None
         ):
