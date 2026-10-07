@@ -3,155 +3,209 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
-from app.asis_client import AsisClient, PARTNER_PAGE_SIZE
+from app.asis_client import AsisClient, AsisGateway, PARTNER_PAGE_SIZE
 from app.database import SessionLocal
 from app.models.branches import Branches
 from app.models.category import Category
 from app.models.customers import Customers, normalize_name, normalize_phone, phones_match
-from app.services.customer_post_service import mark_visits_posted
+from app.services.customer_post_service import CustomerPostService
 
-_lock = threading.Lock()
-_state: dict = {"running": False}
 
-def get_status() -> dict:
-    with _lock:
-        return dict(_state)
+class SyncState:
+    """Status sync yang aman dipakai dari beberapa thread.
 
-def start(branch_id: uuid.UUID | None) -> bool:
-    with _lock:
-        if _state.get("running"):
-            return False
-        _state.clear()
-        _state.update(
-            running=True,
-            started_at=datetime.now(),
-            finished_at=None,
-            branch_id=str(branch_id) if branch_id else None,
-            branches_total=0,
-            branches_done=0,
-            pages_done=0,
-            created=0,
-            updated=0,
-            linked=0,
-            skipped=0,
-            error=None,
+    Disimpan di memori proses ini. Cukup untuk satu proses uvicorn; kalau BE
+    dijalankan dengan beberapa worker, status tidak dibagi antar worker.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._data: dict = {"running": False}
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            return dict(self._data)
+
+    def begin(self, branch_id: uuid.UUID | None) -> bool:
+        """Tandai sync dimulai. Mengembalikan False kalau masih ada sync yang berjalan."""
+        with self._lock:
+            if self._data.get("running"):
+                return False
+            self._data = dict(
+                running=True,
+                started_at=datetime.now(),
+                finished_at=None,
+                branch_id=str(branch_id) if branch_id else None,
+                branches_total=0,
+                branches_done=0,
+                pages_done=0,
+                created=0,
+                updated=0,
+                linked=0,
+                skipped=0,
+                error=None,
+            )
+            return True
+
+    def set(self, **values) -> None:
+        with self._lock:
+            self._data.update(values)
+
+    def bump(self, **counts: int) -> None:
+        with self._lock:
+            for key, value in counts.items():
+                self._data[key] = self._data.get(key, 0) + value
+
+    def finish(self, error: str | None = None) -> None:
+        with self._lock:
+            if error:
+                self._data["error"] = error
+            self._data["running"] = False
+            self._data["finished_at"] = datetime.now()
+
+
+class CustomerSyncService:
+    """Menarik customer dari ASIS ke Master Customer (berjalan di background)."""
+
+    def __init__(
+        self,
+        state: SyncState,
+        session_factory: sessionmaker = SessionLocal,
+        gateway_factory=AsisClient,
+    ):
+        self.state = state
+        self._session_factory = session_factory
+        self._gateway_factory = gateway_factory
+
+    def status(self) -> dict:
+        return self.state.snapshot()
+
+    def start(self, branch_id: uuid.UUID | None) -> bool:
+        return self.state.begin(branch_id)
+
+    def run(self, branch_id: uuid.UUID | None, company_id: uuid.UUID | None) -> None:
+        """Dipanggil sebagai background task setelah start() berhasil."""
+        error = None
+        try:
+            with self._session_factory() as db:
+                branches = self._target_branches(db, branch_id, company_id)
+                categories = {
+                    c.asis_category_id: c.category_id
+                    for c in db.scalars(select(Category).where(Category.asis_category_id.isnot(None)))
+                }
+                self.state.set(branches_total=len(branches))
+
+                gateway = self._gateway_factory()
+                for branch in branches:
+                    self._sync_branch(db, gateway, branch, categories)
+                    self.state.bump(branches_done=1)
+        except Exception as e:
+            error = f"{type(e).__name__}: {e}"
+        finally:
+            self.state.finish(error)
+
+    @staticmethod
+    def _target_branches(db: Session, branch_id: uuid.UUID | None, company_id: uuid.UUID | None) -> list[Branches]:
+        query = select(Branches).where(Branches.asis_branch_id.isnot(None))
+        if branch_id:
+            query = query.where(Branches.branch_id == branch_id)
+        elif company_id:
+            query = query.where(Branches.company_id == company_id)
+        return list(db.scalars(query.order_by(Branches.branch_name)))
+
+    def _sync_branch(
+        self,
+        db: Session,
+        gateway: AsisGateway,
+        branch: Branches,
+        categories: dict[str, uuid.UUID],
+    ) -> None:
+        pending = list(
+            db.scalars(
+                select(Customers).where(Customers.branch_id == branch.branch_id, Customers.asis_partner_id.is_(None))
+            )
         )
-        return True
+        now = datetime.now()
+        page, pages = 1, 1
+        while page <= pages:
+            body = gateway.get_partner_page(page, PARTNER_PAGE_SIZE, branch.asis_branch_id)
+            pages = int(body.get("pages") or 1)
+            self._sync_page(db, body.get("items") or [], branch, categories, pending, now)
+            page += 1
 
+    def _sync_page(
+        self,
+        db: Session,
+        items: list[dict],
+        branch: Branches,
+        categories: dict[str, uuid.UUID],
+        pending: list[Customers],
+        now: datetime,
+    ) -> None:
+        ids = [str(item["id"]) for item in items if item.get("id")]
+        existing = {
+            c.asis_partner_id: c
+            for c in db.scalars(select(Customers).where(Customers.asis_partner_id.in_(ids)))
+        }
+        post_service = CustomerPostService(db)
+        created = updated = linked = skipped = 0
+        for item in items:
+            fields = self._item_fields(item, categories)
+            if fields is None:
+                skipped += 1
+                continue
+            partner_id = str(item["id"])
 
-def _bump(**counts: int) -> None:
-    with _lock:
-        for key, value in counts.items():
-            _state[key] = _state.get(key, 0) + value
+            customer = existing.get(partner_id)
+            if customer:
+                for key, value in fields.items():
+                    setattr(customer, key, value)
+                customer.last_synced_at = now
+                updated += 1
+                continue
 
-def _item_fields(item: dict, categories: dict[str, uuid.UUID]) -> dict | None:
-    name = (item.get("name") or "").strip()
-    if not item.get("id") or not name:
-        return None
-    return {
-        "name": name,
-        "phone": (item.get("phone") or "").strip() or None,
-        "email": (item.get("email") or "").strip() or None,
-        "category_id": categories.get(str(item.get("partner_category_id"))),
-    }
+            # Customer yang sebelumnya didaftarkan dari CORA dan ternyata sudah ada di ASIS: tautkan.
+            match = self._find_pending_match(pending, fields)
+            if match:
+                pending.remove(match)
+                for key, value in fields.items():
+                    if value is not None:
+                        setattr(match, key, value)
+                match.mark_posted(partner_id, now)
+                match.last_synced_at = now
+                db.flush()
+                post_service.mark_visits_posted(match)
+                existing[partner_id] = match
+                linked += 1
+                continue
 
+            customer = Customers(asis_partner_id=partner_id, branch_id=branch.branch_id, last_synced_at=now, **fields)
+            db.add(customer)
+            existing[partner_id] = customer
+            created += 1
 
-def _sync_page(
-    db: Session,
-    items: list[dict],
-    branch: Branches,
-    categories: dict[str, uuid.UUID],
-    pending: list[Customers],
-    now: datetime,
-) -> None:
-    ids = [str(item["id"]) for item in items if item.get("id")]
-    existing = {
-        c.asis_partner_id: c
-        for c in db.scalars(select(Customers).where(Customers.asis_partner_id.in_(ids)))
-    }
-    created = updated = linked = skipped = 0
-    for item in items:
-        fields = _item_fields(item, categories)
-        if fields is None:
-            skipped += 1
-            continue
-        partner_id = str(item["id"])
+        db.commit()
+        self.state.bump(created=created, updated=updated, linked=linked, skipped=skipped, pages_done=1)
 
-        customer = existing.get(partner_id)
-        if customer:
-            for key, value in fields.items():
-                setattr(customer, key, value)
-            customer.last_synced_at = now
-            updated += 1
-            continue
+    @staticmethod
+    def _item_fields(item: dict, categories: dict[str, uuid.UUID]) -> dict | None:
+        name = (item.get("name") or "").strip()
+        if not item.get("id") or not name:
+            return None
+        return {
+            "name": name,
+            "phone": (item.get("phone") or "").strip() or None,
+            "email": (item.get("email") or "").strip() or None,
+            "category_id": categories.get(str(item.get("partner_category_id"))),
+        }
 
-        name_key, phone_key = normalize_name(fields["name"]), normalize_phone(fields["phone"]) or None
-        match = next(
+    @staticmethod
+    def _find_pending_match(pending: list[Customers], fields: dict) -> Customers | None:
+        name_key = normalize_name(fields["name"])
+        phone_key = normalize_phone(fields["phone"]) or None
+        return next(
             (c for c in pending if c.name_search == name_key and phones_match(c.phone_norm, phone_key)),
             None,
         )
-        if match:
-            pending.remove(match)
-            for key, value in fields.items():
-                if value is not None:
-                    setattr(match, key, value)
-            match.asis_partner_id = partner_id
-            match.posted_at = now
-            match.last_synced_at = now
-            db.flush()
-            mark_visits_posted(db, match)
-            existing[partner_id] = match
-            linked += 1
-            continue
-
-        customer = Customers(asis_partner_id=partner_id, branch_id=branch.branch_id, last_synced_at=now, **fields)
-        db.add(customer)
-        existing[partner_id] = customer
-        created += 1
-
-    db.commit()
-    _bump(created=created, updated=updated, linked=linked, skipped=skipped, pages_done=1)
-
-def _sync_branch(db: Session, client: AsisClient, branch: Branches, categories: dict[str, uuid.UUID]) -> None:
-    pending = list(
-        db.scalars(
-            select(Customers).where(Customers.branch_id == branch.branch_id, Customers.asis_partner_id.is_(None))
-        )
-    )
-    now = datetime.now()
-    page, pages = 1, 1
-    while page <= pages:
-        body = client.get_partner_page(page, PARTNER_PAGE_SIZE, branch.asis_branch_id)
-        pages = int(body.get("pages") or 1)
-        _sync_page(db, body.get("items") or [], branch, categories, pending, now)
-        page += 1
-
-def run(branch_id: uuid.UUID | None, company_id: uuid.UUID | None) -> None:
-    try:
-        with SessionLocal() as db:
-            query = select(Branches).where(Branches.asis_branch_id.isnot(None))
-            if branch_id:
-                query = query.where(Branches.branch_id == branch_id)
-            elif company_id:
-                query = query.where(Branches.company_id == company_id)
-            branches = list(db.scalars(query.order_by(Branches.branch_name)))
-            categories = {
-                c.asis_category_id: c.category_id
-                for c in db.scalars(select(Category).where(Category.asis_category_id.isnot(None)))
-            }
-            with _lock:
-                _state["branches_total"] = len(branches)
-
-            client = AsisClient()
-            for branch in branches:
-                _sync_branch(db, client, branch, categories)
-                _bump(branches_done=1)
-    except Exception as e:
-        with _lock:
-            _state["error"] = f"{type(e).__name__}: {e}"
-    finally:
-        with _lock:
-            _state["running"] = False
-            _state["finished_at"] = datetime.now()

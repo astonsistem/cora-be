@@ -1,10 +1,9 @@
-import os
+from abc import ABC, abstractmethod
 from urllib.parse import urlencode
 
 import httpx
-from dotenv import load_dotenv
 
-load_dotenv()
+from app.config import settings
 
 LOGIN_PATH = "/auth/login"
 COMPANY_PATH = "/super/company/company"
@@ -40,15 +39,39 @@ def extract_items(body) -> list[dict]:
         return data["items"]
     return []
 
-class AsisClient:
+class AsisGateway(ABC):
+    @abstractmethod
+    def get_companies(self) -> list[dict]: ...
+
+    @abstractmethod
+    def get_branches(self) -> list[dict]: ...
+
+    @abstractmethod
+    def get_categories(self) -> list[dict]: ...
+
+    @abstractmethod
+    def get_partner_page(
+        self,
+        page: int = 1,
+        size: int = PARTNER_PAGE_SIZE,
+        branch_asis_id: str | None = None,
+        name: str | None = None,
+    ) -> dict: ...
+
+    @abstractmethod
+    def find_partners(self, branch_asis_id: str, name: str) -> list[dict]: ...
+
+    @abstractmethod
+    def create_partner(self, payload: dict) -> str: ...
+
+class AsisClient(AsisGateway):
     def __init__(self):
-        base_url = os.getenv("ASIS_BASE_URL")
-        if not base_url:
+        if not settings.asis_base_url:
             raise AsisError("ASIS_BASE_URL belum diisi di .env")
-        self.api_url = base_url.rstrip("/")
+        self.api_url = settings.asis_base_url.rstrip("/")
         self.login_url = f"{self.api_url}{LOGIN_PATH}"
-        self.username = os.getenv("ASIS_USERNAME")
-        self.password = os.getenv("ASIS_PASSWORD")
+        self.username = settings.asis_username
+        self.password = settings.asis_password
         self._token = None
         self._http = httpx.Client(
             transport=httpx.HTTPTransport(retries=CONNECT_RETRIES),

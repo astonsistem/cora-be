@@ -1,78 +1,66 @@
 import uuid
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from app.models.user_photos import UserPhotos
 from app.models.users import UserRole, Users
-from app.schemas.user_schema import UserCreate, UserUpdate
-from app.security import hash_password
+from app.exceptions import ConflictError
+from app.security import password_hasher
+from app.services.base_service import CrudService
 
-def get_all(db: Session, current_user: Users, skip: int = 0, limit: int = 100) -> list[Users]:
-    query = select(Users)
-    if current_user.user_role == UserRole.sales or (
-        current_user.user_role == UserRole.branch_manager and current_user.branch_id is None
-    ):
-        query = query.where(Users.user_id == current_user.user_id)
-    elif current_user.user_role == UserRole.branch_manager:
-        query = query.where(Users.branch_id == current_user.branch_id)
-    return list(db.scalars(query.offset(skip).limit(limit)))
+class UserService(CrudService[Users]):
+    model = Users
+    label = "User"
+    invalid_reference_message = "Invalid company or branch reference"
 
-def get_by_id(db: Session, user_id: uuid.UUID) -> Users | None:
-    return db.get(Users, user_id)
+    def get_all_for(self, current_user: Users, skip: int = 0, limit: int = 100) -> list[Users]:
+        query = select(Users)
+        if current_user.user_role == UserRole.sales or (
+            current_user.user_role == UserRole.branch_manager and current_user.branch_id is None
+        ):
+            query = query.where(Users.user_id == current_user.user_id)
+        elif current_user.user_role == UserRole.branch_manager:
+            query = query.where(Users.branch_id == current_user.branch_id)
+        return list(self.db.scalars(query.offset(skip).limit(limit)))
 
-def get_by_username(db: Session, username: str) -> Users | None:
-    return db.scalar(select(Users).where(Users.username == username))
+    def get_by_username(self, username: str) -> Users | None:
+        return self.db.scalar(select(Users).where(Users.username == username))
 
-def create_user(db: Session, data: UserCreate) -> Users:
-    if get_by_username(db, data.username):
-        raise ValueError("Username already exists")
+    def _build(self, data) -> Users:
+        if self.get_by_username(data.username):
+            raise ConflictError("Username already exists")
 
-    values = data.model_dump(exclude={"password"})
-    user = Users(**values, password=hash_password(data.password))
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
+        values = data.model_dump(exclude={"password"})
+        return Users(**values, password=password_hasher.hash(data.password))
 
-def update_user(db: Session, user: Users, data: UserUpdate) -> Users:
-    values = data.model_dump(exclude_unset=True)
+    def _prepare_update(self, user: Users, values: dict) -> dict:
+        new_username = values.get("username")
+        if new_username and new_username != user.username and self.get_by_username(new_username):
+            raise ConflictError("Username already exists")
 
-    new_username = values.get("username")
-    if new_username and new_username != user.username and get_by_username(db, new_username):
-        raise ValueError("Username already exists")
+        if "password" in values:
+            values["password"] = password_hasher.hash(values["password"])
 
-    if "password" in values:
-        values["password"] = hash_password(values["password"])
+        return values
 
-    for key, value in values.items():
-        setattr(user, key, value)
-    db.commit()
-    db.refresh(user)
-    return user
+    def get_photo(self, user_id: uuid.UUID) -> UserPhotos | None:
+        return self.db.get(UserPhotos, user_id)
 
-def get_photo(db: Session, user_id: uuid.UUID) -> UserPhotos | None:
-    return db.get(UserPhotos, user_id)
+    def save_photo(self, user: Users, content_type: str, data: bytes) -> Users:
+        photo = self.get_photo(user.user_id)
+        if photo:
+            photo.content_type = content_type
+            photo.data = data
+        else:
+            self.db.add(UserPhotos(user_id=user.user_id, content_type=content_type, data=data))
+        user.photo_url = f"/users/{user.user_id}/photo"
+        self._commit()
+        self.db.refresh(user)
+        return user
 
-def save_photo(db: Session, user: Users, content_type: str, data: bytes) -> Users:
-    photo = db.get(UserPhotos, user.user_id)
-    if photo:
-        photo.content_type = content_type
-        photo.data = data
-    else:
-        db.add(UserPhotos(user_id=user.user_id, content_type=content_type, data=data))
-    user.photo_url = f"/users/{user.user_id}/photo"
-    db.commit()
-    db.refresh(user)
-    return user
-
-def delete_photo(db: Session, user: Users) -> None:
-    photo = db.get(UserPhotos, user.user_id)
-    if photo:
-        db.delete(photo)
-    user.photo_url = None
-    db.commit()
-
-def delete_user(db: Session, user: Users) -> None:
-    db.delete(user)
-    db.commit()
+    def delete_photo(self, user: Users) -> None:
+        photo = self.get_photo(user.user_id)
+        if photo:
+            self.db.delete(photo)
+        user.photo_url = None
+        self._commit()

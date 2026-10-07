@@ -37,11 +37,9 @@ for module in (
 ):
     app.include_router(module.router)
 
-
 @app.get("/")
 def root():
     return {"message": "CORA API is running"}
-
 
 @app.get("/health")
 def health(db: Session = Depends(get_db)):

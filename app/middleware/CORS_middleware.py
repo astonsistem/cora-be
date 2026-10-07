@@ -6,7 +6,6 @@ ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
 ]
 
-
 def register_cors(app: FastAPI) -> None:
     app.add_middleware(
         CORSMiddleware,
