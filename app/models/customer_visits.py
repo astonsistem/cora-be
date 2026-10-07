@@ -9,7 +9,7 @@ class CustomerVisits(Base):
 
     visit_id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"))
-    posted_at = Column(DateTime, nullable=False, server_default=func.now())
+    posted_at = Column(DateTime, nullable=False, server_default=func.now(), index=True)
     customer_name = Column(String, nullable=False)
     phone = Column(String, nullable=False)
     customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.customer_id"), nullable=True, index=True)

@@ -15,6 +15,8 @@ from app.routes import (
     company_route,
     customer_route,
     customer_visit_route,
+    public_route,
+    report_route,
     source_route,
     user_route,
 )
@@ -34,6 +36,8 @@ for module in (
     customer_route,
     customer_visit_route,
     asis_route,
+    public_route,
+    report_route,
 ):
     app.include_router(module.router)
 

@@ -1,8 +1,3 @@
-"""Penyedia (provider) service untuk dependency injection FastAPI.
-
-Route cukup menulis `service: BranchService = Depends(get_branch_service)`;
-pembuatan objek service dan penyuntikan db atau user dilakukan di sini.
-"""
 from functools import lru_cache
 
 from fastapi import Depends
@@ -19,8 +14,10 @@ from app.services.customer_post_service import CustomerPostService
 from app.services.customer_service import CustomerService
 from app.services.customer_sync_service import CustomerSyncService, SyncState
 from app.services.customer_visit_service import CustomerVisitService
+from app.services.report_service import ReportService
 from app.services.source_service import SourceService
 from app.services.user_service import UserService
+from app.services.visit_stats_service import VisitStatsService
 
 def get_branch_service(db: Session = Depends(get_db)) -> BranchService:
     return BranchService(db)
@@ -49,6 +46,15 @@ def get_customer_visit_service(
 ) -> CustomerVisitService:
     return CustomerVisitService(db, current_user)
 
+def get_report_service(
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
+) -> ReportService:
+    return ReportService(db, current_user)
+
+def get_visit_stats_service(db: Session = Depends(get_db)) -> VisitStatsService:
+    return VisitStatsService(db)
+
 def get_customer_post_service(db: Session = Depends(get_db)) -> CustomerPostService:
     return CustomerPostService(db)
 
@@ -57,5 +63,4 @@ def get_asis_sync_service(db: Session = Depends(get_db)) -> AsisSyncService:
 
 @lru_cache
 def get_customer_sync_service() -> CustomerSyncService:
-    """Satu instance untuk seluruh aplikasi, karena status sync dibagi antar request."""
     return CustomerSyncService(SyncState())
