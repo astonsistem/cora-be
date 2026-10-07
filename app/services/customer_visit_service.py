@@ -16,12 +16,14 @@ def _scoped(query, current_user: Users):
 
     query = query.join(Users, CustomerVisits.user_id == Users.user_id)
     if current_user.user_role == UserRole.branch_manager:
+        visible_roles = [UserRole.sales]
         in_scope = (
             Users.branch_id == current_user.branch_id
             if current_user.branch_id is not None
             else None
         )
     else:
+        visible_roles = [UserRole.sales, UserRole.branch_manager]
         in_scope = (
             Users.company_id == current_user.company_id
             if current_user.company_id is not None
@@ -29,7 +31,7 @@ def _scoped(query, current_user: Users):
         )
     if in_scope is None:
         return query.where(own)
-    return query.where(or_(own, and_(Users.user_role == UserRole.sales, in_scope)))
+    return query.where(or_(own, and_(Users.user_role.in_(visible_roles), in_scope)))
 
 
 def _in_period(query, date_from: date | None, date_to: date | None):
