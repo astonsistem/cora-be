@@ -1,33 +1,63 @@
-import os
 import uuid
+
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
-from dotenv import load_dotenv
 
-load_dotenv()
-
-SECRET_KEY = os.getenv("SECRET_KEY")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+from app.config import settings
 
 
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+class PasswordHasher:
+    def hash(self, password: str) -> str:
+        return bcrypt.hashpw(
+            password.encode(),
+            bcrypt.gensalt(),
+        ).decode()
+
+    def verify(self, password: str, hashed: str) -> bool:
+        return bcrypt.checkpw(
+            password.encode(),
+            hashed.encode(),
+        )
 
 
-def verify_password(password: str, hashed: str) -> bool:
-    return bcrypt.checkpw(password.encode(), hashed.encode())
+class TokenService:
+    ALGORITHM = "HS256"
+
+    def __init__(self, secret_key: str, expire_minutes: int):
+        self.secret_key = secret_key
+        self.expire_minutes = expire_minutes
+
+    def create_access_token(self, user_id: uuid.UUID) -> str:
+        expire = datetime.now(timezone.utc) + timedelta(
+            minutes=self.expire_minutes
+        )
+
+        payload = {
+            "sub": str(user_id),
+            "exp": expire,
+        }
+
+        return jwt.encode(
+            payload,
+            self.secret_key,
+            algorithm=self.ALGORITHM,
+        )
+
+    def decode_access_token(self, token: str) -> uuid.UUID:
+        payload = jwt.decode(
+            token,
+            self.secret_key,
+            algorithms=[self.ALGORITHM],
+        )
+
+        return uuid.UUID(payload["sub"])
 
 
-def create_access_token(user_id: uuid.UUID) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    payload = {"sub": str(user_id), "exp": expire}
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+password_hasher = PasswordHasher()
 
-
-def decode_access_token(token: str) -> uuid.UUID:
-    """Raise jwt.PyJWTError kalau token tidak valid atau kedaluwarsa."""    
-    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-    return uuid.UUID(payload["sub"])
+token_service = TokenService(
+    settings.secret_key,
+    settings.access_token_expire_minutes,
+)

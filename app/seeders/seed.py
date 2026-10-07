@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models import Sources, Users
 from app.models.users import UserRole
-from app.security import hash_password
+from app.security import password_hasher
 
 db = SessionLocal()
 
@@ -24,7 +24,6 @@ USERS = [
     {"username": "sales", "first_name": "Sales", "last_name": "Satu", "user_role": UserRole.sales, "password": "123456"},
 ]
 
-
 def get_or_create(db: Session, model, lookup: dict, defaults: dict | None = None):
     obj = db.scalar(select(model).filter_by(**lookup))
     if obj:
@@ -33,7 +32,6 @@ def get_or_create(db: Session, model, lookup: dict, defaults: dict | None = None
     db.add(obj)
     db.flush()
     return obj, True
-
 
 def seed_simple(db: Session, model, rows: list[dict]) -> int:
     created = 0
@@ -51,11 +49,10 @@ def seed_users(db: Session) -> int:
             db,
             Users,
             {"username": row.pop("username")},
-            {**row, "password": hash_password(row["password"])},
+            {**row, "password": password_hasher.hash(row["password"])},
         )
         created += is_new
     return created
-
 
 def main() -> None:
     with SessionLocal() as db:
@@ -64,7 +61,6 @@ def main() -> None:
         db.commit()
 
     print(f"Sources baru: {n_src}, Users baru: {n_users}")
-
 
 if __name__ == "__main__":
     main()

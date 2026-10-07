@@ -1,31 +1,19 @@
-import uuid
-
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from app.models.branches import Branches
-from app.schemas.branch_schema import BranchCreate, BranchUpdate
+from app.services.base_service import CrudService
 
-def get_all(db: Session, skip: int = 0, limit: int = 100) -> list[Branches]:
-    return list(db.scalars(select(Branches).offset(skip).limit(limit)))
+class BranchService(CrudService[Branches]):
+    model = Branches
+    label = "Branch"
 
-def get_by_id(db: Session, branch_id: uuid.UUID) -> Branches | None:
-    return db.get(Branches, branch_id)
+    def get_all_by_ids(self, branch_ids: list) -> list[Branches]:
+        if not branch_ids:
+            return []
 
-def create_branch(db: Session, data: BranchCreate) -> Branches:
-    obj = Branches(**data.model_dump())
-    db.add(obj)
-    db.commit()
-    db.refresh(obj)
-    return obj
+        query = select(Branches).where(Branches.branch_id.in_(branch_ids))
+        return list(self.db.scalars(query))
 
-def update_branch(db: Session, obj: Branches, data: BranchUpdate) -> Branches:
-    for key, value in data.model_dump(exclude_unset=True).items():
-        setattr(obj, key, value)
-    db.commit()
-    db.refresh(obj)
-    return obj
-
-def delete_branch(db: Session, obj: Branches) -> None:
-    db.delete(obj)
-    db.commit()
+    def get_all_by_company(self, company_id) -> list[Branches]:
+        query = select(Branches).where(Branches.company_id == company_id)
+        return list(self.db.scalars(query))
