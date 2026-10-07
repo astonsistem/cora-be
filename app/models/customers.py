@@ -1,6 +1,7 @@
 import re
 import unicodedata
 import uuid
+from datetime import datetime
 
 from sqlalchemy import func, Column, String, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
@@ -50,5 +51,13 @@ class Customers(Base):
         return value
 
     @property
+    def is_posted(self) -> bool:
+        return bool(self.asis_partner_id)
+
+    @property
     def status(self) -> str:
-        return "posted" if self.asis_partner_id else "pending"
+        return "posted" if self.is_posted else "pending"
+
+    def mark_posted(self, partner_id: str, when: datetime | None = None) -> None:
+        self.asis_partner_id = partner_id
+        self.posted_at = when or datetime.now()

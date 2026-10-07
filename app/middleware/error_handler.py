@@ -6,10 +6,15 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.asis_client import AsisError
+from app.exceptions import DomainError
 
 logger = logging.getLogger("app.errors")
 
 def register_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(DomainError)
+    async def domain_error_handler(request: Request, exc: DomainError):
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
     @app.exception_handler(AsisError)
     async def asis_error_handler(request: Request, exc: AsisError):
         logger.warning("ASIS error on %s %s: %s", request.method, request.url.path, exc)
