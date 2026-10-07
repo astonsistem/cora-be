@@ -32,11 +32,12 @@ def _sniff_image_type(data: bytes) -> str | None:
 def list_users(
     skip: int = 0,
     limit: int = 100,
+    role: UserRole | None = None,
     service: UserService = Depends(get_user_service),
     current_user: Users = Depends(get_current_user),
 ):
     # OM: semua user, BM: user di branch-nya, sales: dirinya sendiri
-    return service.get_all_for(current_user, skip=skip, limit=limit)
+    return service.get_all_for(current_user, skip=skip, limit=limit, role=role)
 
 
 @router.get("/{user_id}", response_model=UserResponse)

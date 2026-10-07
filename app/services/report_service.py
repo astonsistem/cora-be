@@ -1,3 +1,4 @@
+import uuid
 from datetime import date, timedelta
 
 from sqlalchemy import and_, desc, distinct, func, literal_column, or_, select
@@ -10,6 +11,7 @@ from app.models.customer_visits import CustomerVisits
 from app.models.customers import Customers
 from app.models.sources import Sources
 from app.models.users import UserRole, Users
+from app.schemas.query_params import PeriodParams
 from app.schemas.report_schema import ReportFilter, TrendFilter
 from app.services.visit_expressions import CUSTOMER_KEY, VISIT_BRANCH
 from app.services.visit_period import VisitPeriod
@@ -61,8 +63,7 @@ class ReportService:
         )
 
     def sales_performance(self, criteria: ReportFilter) -> list[dict]:
-        criteria.validate_period()
-        self._ensure_branch_exists(criteria)
+        self._validate(criteria)
         visits_count = func.count(CustomerVisits.visit_id)
         joined_visits = and_(CustomerVisits.user_id == Users.user_id, *VisitPeriod(criteria.date_from, criteria.date_to).conditions())
         query = (
@@ -82,17 +83,19 @@ class ReportService:
             .outerjoin(CustomerVisits, joined_visits)
             .outerjoin(Branches, Users.branch_id == Branches.branch_id)
             .where(self.scope.user_condition())
-            .where(
+            .group_by(Users.user_id, Branches.branch_id)
+            .order_by(desc(visits_count), Users.first_name, Users.last_name)
+        )
+        if not criteria.user_id:
+            query = query.where(
                 or_(
                     CustomerVisits.visit_id.is_not(None),
                     and_(Users.user_role == UserRole.sales, Users.is_active.is_(True)),
                 )
             )
-            .group_by(Users.user_id, Branches.branch_id)
-            .order_by(desc(visits_count), Users.first_name, Users.last_name)
-        )
         if criteria.branch_id:
             query = query.where(Users.branch_id == criteria.branch_id)
+        query = self._filter_users(query, criteria)
         return [
             {
                 "user_id": user_id,
@@ -109,9 +112,12 @@ class ReportService:
                  total_visits, total_customers, posted, last_visit_at) in self.db.execute(query)
         ]
 
+    def sales_performance_by_id(self, user_id: uuid.UUID, period: PeriodParams) -> dict:
+        criteria = ReportFilter(date_from=period.date_from, date_to=period.date_to, user_id=user_id)
+        return self.sales_performance(criteria)[0]
+
     def _visits(self, criteria: ReportFilter, *columns):
-        criteria.validate_period()
-        self._ensure_branch_exists(criteria)
+        self._validate(criteria)
         query = (
             select(*columns)
             .select_from(CustomerVisits)
@@ -121,13 +127,32 @@ class ReportService:
         query = VisitPeriod(criteria.date_from, criteria.date_to).apply(query)
         if criteria.branch_id:
             query = query.where(VISIT_BRANCH == criteria.branch_id)
+        return self._filter_users(query, criteria)
+
+    @staticmethod
+    def _filter_users(query, criteria: ReportFilter):
+        if criteria.user_id:
+            query = query.where(Users.user_id == criteria.user_id)
+        if criteria.user_role:
+            query = query.where(Users.user_role == criteria.user_role)
         return query
+
+    def _validate(self, criteria: ReportFilter) -> None:
+        criteria.validate_period()
+        self._ensure_branch_exists(criteria)
+        self._ensure_user_visible(criteria)
 
     def _ensure_branch_exists(self, criteria: ReportFilter) -> None:
         if criteria.branch_id and self.db.scalar(
             select(Branches.branch_id).where(Branches.branch_id == criteria.branch_id).limit(1)
         ) is None:
             raise NotFoundError("Branch not found")
+
+    def _ensure_user_visible(self, criteria: ReportFilter) -> None:
+        if criteria.user_id and self.db.scalar(
+            select(Users.user_id).where(Users.user_id == criteria.user_id).where(self.scope.user_condition()).limit(1)
+        ) is None:
+            raise NotFoundError("User not found")
 
     def _breakdown(self, criteria: ReportFilter, entity, id_column, name_column, foreign_key, empty_label: str) -> list[dict]:
         visits_count = func.count(CustomerVisits.visit_id)
