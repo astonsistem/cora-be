@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.middleware.auth_middleware import admin_only, get_current_user
+from app.middleware.auth_middleware import admin_only, get_current_user, manager_only
 from app.models.branches import Branches
 from app.models.users import Users
 from app.schemas.customer_schema import (
@@ -19,13 +19,11 @@ from app.services import customer_post_service, customer_service, customer_sync_
 
 router = APIRouter(prefix="/customers", tags=["Customer"])
 
-
 def _get_or_404(db: Session, user: Users, customer_id: uuid.UUID):
     customer = customer_service.get_for_user(db, user, customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
     return customer
-
 
 @router.post("/sync", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(admin_only)])
 def sync_customers(
@@ -34,7 +32,6 @@ def sync_customers(
     db: Session = Depends(get_db),
     current_user: Users = Depends(get_current_user),
 ):
-    """Tarik customer dari ASIS ke Master Customer. Berjalan di background, pantau lewat /sync/status."""
     branch_id = data.branch_id if data else None
     if branch_id:
         branch = db.get(Branches, branch_id)
@@ -64,17 +61,12 @@ def list_customers(
     db: Session = Depends(get_db),
     current_user: Users = Depends(get_current_user),
 ):
-    """Daftar dan suggestion customer. q mencari nama, nomor telepon, atau email.
-
-    Jumlah seluruh data (tanpa skip dan limit) ada di header X-Total-Count untuk pagination.
-    """
     response.headers["X-Total-Count"] = str(
         customer_service.count_all(db, current_user, q=q, status=customer_status, branch_id=branch_id)
     )
     return customer_service.get_all(
         db, current_user, q=q, status=customer_status, branch_id=branch_id, skip=skip, limit=limit
     )
-
 
 @router.get("/{customer_id}", response_model=CustomerResponse)
 def get_customer(
@@ -83,7 +75,6 @@ def get_customer(
     current_user: Users = Depends(get_current_user),
 ):
     return _get_or_404(db, current_user, customer_id)
-
 
 @router.post("/", response_model=CustomerResponse, status_code=status.HTTP_201_CREATED)
 def create_customer(
@@ -102,7 +93,6 @@ def create_customer(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Invalid category or branch reference")
-
 
 @router.patch("/{customer_id}", response_model=CustomerResponse)
 def update_customer(
@@ -124,7 +114,6 @@ def update_customer(
         db.rollback()
         raise HTTPException(status_code=400, detail="Invalid category or branch reference")
 
-
 @router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_customer(
     customer_id: uuid.UUID,
@@ -140,8 +129,7 @@ def delete_customer(
         db.rollback()
         raise HTTPException(status_code=409, detail="Customer masih dipakai oleh customer visit")
 
-
-@router.post("/{customer_id}/post-to-asis", response_model=CustomerPostResponse, dependencies=[Depends(admin_only)])
+@router.post("/{customer_id}/post-to-asis", response_model=CustomerPostResponse, dependencies=[Depends(manager_only)])
 def post_customer_to_asis(
     customer_id: uuid.UUID,
     db: Session = Depends(get_db),
