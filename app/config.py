@@ -15,6 +15,8 @@ class Settings:
         self.asis_username = os.getenv("ASIS_USERNAME")
         self.asis_password = os.getenv("ASIS_PASSWORD")
 
+        self.customer_trash_retention_days = int(os.getenv("CUSTOMER_TRASH_RETENTION_DAYS", "90"))
+
         self.public_api_keys = tuple(
             key.strip() for key in os.getenv("PUBLIC_API_KEY", "").split(",") if key.strip()
         )

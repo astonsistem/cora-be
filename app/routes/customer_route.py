@@ -64,6 +64,18 @@ def list_customers(
     )
     return service.get_all(skip=skip, limit=limit, q=q, status=customer_status, branch_id=branch_id)
 
+@router.get("/deleted", response_model=list[CustomerResponse], dependencies=[Depends(admin_only)])
+def list_deleted_customers(
+    q: str | None = None,
+    branch_id: uuid.UUID | None = None,
+    skip: int = 0,
+    limit: int = 50,
+    response: Response = None,
+    service: CustomerService = Depends(get_customer_service),
+):
+    response.headers["X-Total-Count"] = str(service.count_all(q=q, branch_id=branch_id, deleted=True))
+    return service.get_all(skip=skip, limit=limit, q=q, branch_id=branch_id, deleted=True)
+
 @router.get("/{customer_id}", response_model=CustomerResponse)
 def get_customer(customer_id: uuid.UUID, service: CustomerService = Depends(get_customer_service)):
     return service.get_or_404(customer_id)
@@ -80,9 +92,13 @@ def update_customer(
 ):
     return service.update(service.get_or_404(customer_id), data)
 
-@router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(admin_only)])
 def delete_customer(customer_id: uuid.UUID, service: CustomerService = Depends(get_customer_service)):
     service.delete(service.get_or_404(customer_id))
+
+@router.post("/{customer_id}/restore", response_model=CustomerResponse, dependencies=[Depends(admin_only)])
+def restore_customer(customer_id: uuid.UUID, service: CustomerService = Depends(get_customer_service)):
+    return service.restore(service.get_deleted_or_404(customer_id))
 
 @router.post("/{customer_id}/post-to-asis", response_model=CustomerPostResponse, dependencies=[Depends(manager_only)])
 def post_customer_to_asis(

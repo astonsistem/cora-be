@@ -56,6 +56,7 @@ PUBLIC_API_KEY=
 | `ASIS_USERNAME` | Untuk fitur ASIS | Nama pengguna untuk masuk ke API ASIS. |
 | `ASIS_PASSWORD` | Untuk fitur ASIS | Kata sandi untuk masuk ke API ASIS. |
 | `PUBLIC_API_KEY` | Untuk endpoint publik | Kunci untuk header `X-Api-Key` pada *endpoint* `/public`. Beberapa kunci dapat diisi dengan pemisah koma agar kunci dapat diganti tanpa menghentikan layanan. Apabila kosong, seluruh permintaan ke `/public` ditolak. |
+| `CUSTOMER_TRASH_RETENTION_DAYS` | Tidak | Lama customer yang dihapus disimpan sebelum dihapus permanen secara otomatis, dalam satuan hari. Nilai bawaan adalah `90`. |
 
 Perintah untuk membuat `SECRET_KEY` secara acak:
 
@@ -103,6 +104,18 @@ Laporan aktivitas visit tersedia di `/reports` (memerlukan token JWT) dan seluru
 | `GET /reports/source` | Jumlah visit per sumber beserta persentasenya |
 | `GET /reports/sales-performance` | Jumlah visit, customer unik, visit terposting, dan visit terakhir per user, diurutkan dari visit terbanyak. Sales aktif tanpa visit tetap ditampilkan |
 | `GET /reports/sales-performance/{user_id}` | Performa satu user (objek tunggal dengan isi yang sama seperti satu baris di atas), mengikuti `date_from` dan `date_to`. User yang tidak ada atau berada di luar cakupan *role* pemanggil menghasilkan 404, sedangkan user yang terlihat tetapi tanpa visit menghasilkan baris bernilai 0 |
+
+Saat sync customer, customer yang sudah diposting tetapi tidak ditemukan lagi di ASIS (dicocokkan lewat ID partner ASIS) dikembalikan menjadi *belum posted* (`pending`): `asis_partner_id` dan `posted_at` dikosongkan, dan visit milik customer tersebut ikut menjadi belum posted. Customer tersebut dapat diposting kembali, atau ditautkan lagi secara otomatis apabila muncul kembali di ASIS dengan nama dan telepon yang sama. Pengembalian dilakukan di akhir sync tiap branch, hanya apabila sync branch tersebut selesai tanpa galat, dan dilewati dengan peringatan (`warnings` pada `GET /customers/sync/status`) apabila ASIS mengembalikan 0 customer atau lebih dari 50% customer sebuah branch (minimal 10 customer) tidak ditemukan. Jumlahnya dilaporkan pada kolom `missing` di status sync.
+
+Penghapusan customer bersifat *soft delete* (kolom `deleted_at`) dan hanya dapat dilakukan oleh OM:
+
+| Endpoint | Aturan |
+|---|---|
+| `DELETE /customers/{id}` | Hanya OM. Berlaku untuk semua status customer (pending maupun posted). Customer disembunyikan dari seluruh daftar, pencarian, dan pilihan customer pada visit, tetapi visit miliknya tidak berubah. Customer baru dengan nama dan telepon yang sama dapat dibuat kembali. Respons 204 |
+| `GET /customers/deleted` | Hanya OM. Daftar customer yang dihapus (terbaru lebih dulu), dengan `q`, `branch_id`, `skip`, `limit`, dan header `X-Total-Count`, sesuai cakupan company OM |
+| `POST /customers/{id}/restore` | Hanya OM. Mengembalikan customer yang dihapus. Ditolak 409 apabila sudah ada customer aktif dengan nama dan telepon yang sama di branch tersebut |
+
+Customer yang sudah dihapus lebih dari 90 hari dihapus permanen secara otomatis (`CUSTOMER_TRASH_RETENTION_DAYS`, bawaan 90). Pemeriksaan berjalan saat aplikasi dinyalakan lalu setiap 24 jam. Visit milik customer yang dihapus permanen tidak ikut terhapus; kolom `customer_id`-nya dikosongkan dan nama serta telepon pada visit tetap tersimpan. Sync tidak menghidupkan kembali customer yang berada di tempat sampah: customer ASIS dengan ID yang sama dilewati (dihitung pada `skipped`).
 
 ## 5. Installation
 

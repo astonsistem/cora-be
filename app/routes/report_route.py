@@ -2,7 +2,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-
+from app.middleware.auth_middleware import manager_only
 from app.dependencies import get_report_service
 from app.schemas.query_params import PeriodParams
 from app.schemas.report_schema import (
@@ -15,7 +15,7 @@ from app.schemas.report_schema import (
 )
 from app.services.report_service import ReportService
 
-router = APIRouter(prefix="/reports", tags=["Report"])
+router = APIRouter(prefix="/reports", tags=["Report"], dependencies=[Depends(manager_only)])
 
 @router.get("/summary", response_model=ReportSummary)
 def report_summary(

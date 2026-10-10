@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import asynccontextmanager, suppress
+
 from fastapi import Depends, FastAPI
 
 from sqlalchemy import text
@@ -6,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.middleware.CORS_middleware import register_cors
 from app.middleware.error_handler import register_exception_handlers
+from app.services.customer_purge_service import CustomerPurgeScheduler, CustomerPurgeService
 
 from app.routes import (
     asis_route,
@@ -21,7 +25,17 @@ from app.routes import (
     user_route,
 )
 
-app = FastAPI(title="CORA API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    purge_task = asyncio.create_task(CustomerPurgeScheduler(CustomerPurgeService()).run())
+    try:
+        yield
+    finally:
+        purge_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await purge_task
+
+app = FastAPI(title="CORA API", lifespan=lifespan)
 
 register_cors(app)
 register_exception_handlers(app)
