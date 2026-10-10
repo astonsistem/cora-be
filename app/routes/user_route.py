@@ -9,7 +9,7 @@ from app.models.users import UserRole, Users
 from app.schemas.user_schema import UserCreate, UserResponse, UserUpdate
 from app.services.user_service import UserService
 
-router = APIRouter(prefix="/users", tags=["User"], dependencies=[Depends(admin_only)])
+router = APIRouter(prefix="/users", tags=["User"])
 
 MAX_PHOTO_BYTES = 2 * 1024 * 1024
 

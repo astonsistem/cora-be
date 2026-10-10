@@ -15,7 +15,7 @@ from app.schemas.report_schema import (
 )
 from app.services.report_service import ReportService
 
-router = APIRouter(prefix="/reports", tags=["Report"], dependencies=[Depends(manager_only)])
+router = APIRouter(prefix="/reports", tags=["Report"])
 
 @router.get("/summary", response_model=ReportSummary)
 def report_summary(
