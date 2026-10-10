@@ -75,6 +75,13 @@ class CustomerPostService:
             )
         )
 
+    def mark_visits_unposted(self, customer: Customers) -> None:
+        self.db.execute(
+            update(CustomerVisits)
+            .where(CustomerVisits.customer_id == customer.customer_id)
+            .values(is_posted_to_asis=False, posted_to_asis_at=None, asis_partner_id=None)
+        )
+
     def post(self, customer: Customers) -> tuple[Customers, bool]:
         """Daftarkan customer ke ASIS. Mengembalikan (customer, linked_existing)."""
         # Kunci baris supaya klik ganda tidak membuat dua partner di ASIS.

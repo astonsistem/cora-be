@@ -65,6 +65,7 @@ class CustomerResponse(CustomerBase):
     status: str
     created_by: uuid.UUID | None = None
     posted_at: datetime | None = None
+    deleted_at: datetime | None = None
     last_synced_at: datetime | None = None
     created_at: datetime
     updated_at: datetime

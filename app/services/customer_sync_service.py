@@ -2,7 +2,7 @@ import threading
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.asis_client import AsisClient, AsisGateway, PARTNER_PAGE_SIZE
@@ -45,6 +45,8 @@ class SyncState:
                 updated=0,
                 linked=0,
                 skipped=0,
+                missing=0,
+                warnings=[],
                 error=None,
             )
             return True
@@ -57,6 +59,10 @@ class SyncState:
         with self._lock:
             for key, value in counts.items():
                 self._data[key] = self._data.get(key, 0) + value
+
+    def warn(self, message: str) -> None:
+        with self._lock:
+            self._data["warnings"] = [*self._data.get("warnings", []), message]
 
     def finish(self, error: str | None = None) -> None:
         with self._lock:
@@ -78,6 +84,9 @@ class CustomerSyncService:
         self.state = state
         self._session_factory = session_factory
         self._gateway_factory = gateway_factory
+
+    MISSING_GUARD_RATIO = 0.5
+    MISSING_GUARD_MIN_CUSTOMERS = 10
 
     def status(self) -> dict:
         return self.state.snapshot()
@@ -124,16 +133,60 @@ class CustomerSyncService:
     ) -> None:
         pending = list(
             db.scalars(
-                select(Customers).where(Customers.branch_id == branch.branch_id, Customers.asis_partner_id.is_(None))
+                select(Customers).where(
+                    Customers.branch_id == branch.branch_id,
+                    Customers.asis_partner_id.is_(None),
+                    Customers.deleted_at.is_(None),
+                )
             )
         )
         now = datetime.now()
-        page, pages = 1, 1
+        page, pages, seen = 1, 1, 0
         while page <= pages:
             body = gateway.get_partner_page(page, PARTNER_PAGE_SIZE, branch.asis_branch_id)
             pages = int(body.get("pages") or 1)
-            self._sync_page(db, body.get("items") or [], branch, categories, pending, now)
+            seen += self._sync_page(db, body.get("items") or [], branch, categories, pending, now)
             page += 1
+        self._return_missing_to_pending(db, branch, now, seen)
+
+    def _return_missing_to_pending(self, db: Session, branch: Branches, started_at: datetime, seen: int) -> None:
+        posted_filter = (
+            Customers.branch_id == branch.branch_id,
+            Customers.asis_partner_id.isnot(None),
+            Customers.deleted_at.is_(None),
+        )
+        posted_total = db.scalar(select(func.count()).select_from(Customers).where(*posted_filter)) or 0
+        candidates = list(
+            db.scalars(
+                select(Customers).where(
+                    *posted_filter,
+                    or_(Customers.last_synced_at.is_(None), Customers.last_synced_at < started_at),
+                    or_(Customers.posted_at.is_(None), Customers.posted_at < started_at),
+                )
+            )
+        )
+        if not candidates:
+            return
+        if seen == 0:
+            self.state.warn(f"{branch.branch_name}: ASIS tidak mengembalikan customer, pengembalian ke pending dilewati")
+            return
+        too_many = (
+            posted_total >= self.MISSING_GUARD_MIN_CUSTOMERS
+            and len(candidates) / posted_total > self.MISSING_GUARD_RATIO
+        )
+        if too_many:
+            self.state.warn(
+                f"{branch.branch_name}: {len(candidates)} dari {posted_total} customer tidak ditemukan di ASIS, "
+                "pengembalian ke pending dilewati karena hasilnya mencurigakan"
+            )
+            return
+        post_service = CustomerPostService(db)
+        for customer in candidates:
+            customer.mark_unposted()
+            db.flush()
+            post_service.mark_visits_unposted(customer)
+        db.commit()
+        self.state.bump(missing=len(candidates))
 
     def _sync_page(
         self,
@@ -143,7 +196,7 @@ class CustomerSyncService:
         categories: dict[str, uuid.UUID],
         pending: list[Customers],
         now: datetime,
-    ) -> None:
+    ) -> int:
         ids = [str(item["id"]) for item in items if item.get("id")]
         existing = {
             c.asis_partner_id: c
@@ -159,6 +212,9 @@ class CustomerSyncService:
             partner_id = str(item["id"])
 
             customer = existing.get(partner_id)
+            if customer and customer.is_deleted:
+                skipped += 1
+                continue
             if customer:
                 for key, value in fields.items():
                     setattr(customer, key, value)
@@ -188,6 +244,7 @@ class CustomerSyncService:
 
         db.commit()
         self.state.bump(created=created, updated=updated, linked=linked, skipped=skipped, pages_done=1)
+        return created + updated + linked
 
     @staticmethod
     def _item_fields(item: dict, categories: dict[str, uuid.UUID]) -> dict | None:

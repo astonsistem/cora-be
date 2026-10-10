@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import false, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.exceptions import BadRequestError, ConflictError, ForbiddenError
+from app.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError
 from app.models.branches import Branches
 from app.models.customer_visits import CustomerVisits
 from app.models.customers import Customers, normalize_name, normalize_phone, phones_match
@@ -47,8 +47,10 @@ class CustomerService(CrudService[Customers]):
         q: str | None = None,
         status: str | None = None,
         branch_id: uuid.UUID | None = None,
+        deleted: bool = False,
     ):
         query = self._scope(select(Customers))
+        query = query.where(Customers.deleted_at.isnot(None) if deleted else Customers.deleted_at.is_(None))
         if branch_id:
             query = query.where(Customers.branch_id == branch_id)
         if status == "posted":
@@ -66,9 +68,16 @@ class CustomerService(CrudService[Customers]):
             query = query.where(or_(*conditions))
         return query
 
-    def get_by_id(self, obj_id) -> Customers | None:
+    def get_by_id(self, obj_id, deleted: bool = False) -> Customers | None:
         query = self._scope(select(Customers).where(Customers.customer_id == obj_id))
+        query = query.where(Customers.deleted_at.isnot(None) if deleted else Customers.deleted_at.is_(None))
         return self.db.scalar(query)
+
+    def get_deleted_or_404(self, obj_id) -> Customers:
+        customer = self.get_by_id(obj_id, deleted=True)
+        if customer is None:
+            raise NotFoundError("Customer yang dihapus tidak ditemukan")
+        return customer
 
     def get_all(
         self,
@@ -77,9 +86,11 @@ class CustomerService(CrudService[Customers]):
         q: str | None = None,
         status: str | None = None,
         branch_id: uuid.UUID | None = None,
+        deleted: bool = False,
     ) -> list[Customers]:
-        query = self._filtered(q, status, branch_id)
-        query = query.order_by(Customers.name_search).offset(skip).limit(min(max(limit, 1), 200))
+        query = self._filtered(q, status, branch_id, deleted)
+        order = (Customers.deleted_at.desc(), Customers.name_search) if deleted else (Customers.name_search,)
+        query = query.order_by(*order).offset(skip).limit(min(max(limit, 1), 200))
         return list(self.db.scalars(query))
 
     def count_all(
@@ -87,8 +98,9 @@ class CustomerService(CrudService[Customers]):
         q: str | None = None,
         status: str | None = None,
         branch_id: uuid.UUID | None = None,
+        deleted: bool = False,
     ) -> int:
-        subquery = self._filtered(q, status, branch_id).subquery()
+        subquery = self._filtered(q, status, branch_id, deleted).subquery()
         return self.db.scalar(select(func.count()).select_from(subquery)) or 0
 
     def find_duplicate(
@@ -101,6 +113,7 @@ class CustomerService(CrudService[Customers]):
         query = select(Customers).where(
             Customers.branch_id == branch_id,
             Customers.name_search == normalize_name(name),
+            Customers.deleted_at.is_(None),
         )
         if exclude_id:
             query = query.where(Customers.customer_id != exclude_id)
@@ -164,9 +177,19 @@ class CustomerService(CrudService[Customers]):
         return values
 
     def delete(self, customer: Customers) -> None:
-        if customer.is_posted:
-            raise CustomerPostedError("Customer yang sudah diposting ke ASIS tidak dapat dihapus")
-        super().delete(customer)
+        customer.soft_delete()
+        self._commit()
+
+    def restore(self, customer: Customers) -> Customers:
+        duplicate = self.find_duplicate(
+            customer.branch_id, customer.name, customer.phone, exclude_id=customer.customer_id
+        )
+        if duplicate:
+            raise DuplicateCustomerError(duplicate)
+        customer.restore()
+        self._commit()
+        self.db.refresh(customer)
+        return customer
 
     def ensure_customer(
         self,

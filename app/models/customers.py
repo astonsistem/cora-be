@@ -33,6 +33,7 @@ class Customers(Base):
     category_id = Column(UUID(as_uuid=True), ForeignKey("category.category_id"), nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=True)
     posted_at = Column(DateTime, nullable=True)
+    deleted_at = Column(DateTime, nullable=True, index=True)
     last_synced_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
@@ -55,9 +56,23 @@ class Customers(Base):
         return bool(self.asis_partner_id)
 
     @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
+
+    @property
     def status(self) -> str:
         return "posted" if self.is_posted else "pending"
 
     def mark_posted(self, partner_id: str, when: datetime | None = None) -> None:
         self.asis_partner_id = partner_id
         self.posted_at = when or datetime.now()
+
+    def mark_unposted(self) -> None:
+        self.asis_partner_id = None
+        self.posted_at = None
+
+    def soft_delete(self, when: datetime | None = None) -> None:
+        self.deleted_at = when or datetime.now()
+
+    def restore(self) -> None:
+        self.deleted_at = None
