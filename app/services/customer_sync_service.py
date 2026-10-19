@@ -5,8 +5,8 @@ from datetime import datetime
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.asis_client import AsisClient, AsisGateway, PARTNER_PAGE_SIZE
-from app.database import SessionLocal
+from app.core.integrations.asis_client import AsisClient, AsisGateway, PARTNER_PAGE_SIZE
+from app.core.database.database import SessionLocal
 from app.models.branches import Branches
 from app.models.category import Category
 from app.models.customers import Customers, normalize_name, normalize_phone, phones_match

@@ -1,7 +1,8 @@
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response, status
+from fastapi import BackgroundTasks, Depends, Query, Response, status
 
+from app.core.response.envelope import ApiRouter
 from app.dependencies import (
     get_branch_service,
     get_customer_post_service,
@@ -23,7 +24,7 @@ from app.services.customer_post_service import CustomerPostService
 from app.services.customer_service import CustomerService
 from app.services.customer_sync_service import CustomerSyncService
 
-router = APIRouter(prefix="/customers", tags=["Customer"])
+router = ApiRouter(prefix="/customers", tags=["Customer"])
 
 @router.post("/sync", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(admin_only)])
 def sync_customers(

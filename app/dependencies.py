@@ -3,10 +3,11 @@ from functools import lru_cache
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.core.database.database import get_db
 from app.middleware.auth_middleware import get_current_user
 from app.models.users import Users
 from app.services.asis_sync_service import AsisSyncService
+from app.services.auth_service import AuthService
 from app.services.branch_service import BranchService
 from app.services.category_service import CategoryService
 from app.services.company_service import CompanyService
@@ -33,6 +34,9 @@ def get_source_service(db: Session = Depends(get_db)) -> SourceService:
 
 def get_user_service(db: Session = Depends(get_db)) -> UserService:
     return UserService(db)
+
+def get_auth_service(db: Session = Depends(get_db)) -> AuthService:
+    return AuthService(UserService(db))
 
 def get_customer_service(
     db: Session = Depends(get_db),

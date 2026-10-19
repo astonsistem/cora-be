@@ -1,7 +1,8 @@
 import uuid
 
-from fastapi import APIRouter, Depends, File, Response, UploadFile, status
+from fastapi import Depends, File, Response, UploadFile, status
 
+from app.core.response.envelope import ApiRouter
 from app.dependencies import get_user_service
 from app.exceptions import BadRequestError, ForbiddenError, NotFoundError, PayloadTooLargeError, UnsupportedMediaError
 from app.middleware.auth_middleware import admin_only, get_current_user
@@ -9,7 +10,7 @@ from app.models.users import UserRole, Users
 from app.schemas.user_schema import UserCreate, UserResponse, UserUpdate
 from app.services.user_service import UserService
 
-router = APIRouter(prefix="/users", tags=["User"])
+router = ApiRouter(prefix="/users", tags=["User"])
 
 MAX_PHOTO_BYTES = 2 * 1024 * 1024
 

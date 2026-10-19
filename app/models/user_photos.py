@@ -1,6 +1,6 @@
 from sqlalchemy import func, Column, String, DateTime, ForeignKey, LargeBinary
 from sqlalchemy.dialects.postgresql import UUID
-from app.database import Base
+from app.core.database.database import Base
 
 class UserPhotos(Base):
     __tablename__ = "user_photos"

@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.asis_client import AsisClient, AsisGateway
+from app.core.integrations.asis_client import AsisClient, AsisGateway
 from app.exceptions import BadRequestError
 from app.models.branches import Branches
 from app.models.category import Category

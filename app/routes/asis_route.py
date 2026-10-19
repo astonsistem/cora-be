@@ -1,12 +1,13 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import Depends, status
 
+from app.core.response.envelope import ApiRouter
 from app.dependencies import get_asis_sync_service
 from app.exceptions import BadRequestError
 from app.middleware.auth_middleware import admin_only
 from app.schemas.asis_schema import AsisApplyRequest
 from app.services.asis_sync_service import AsisSyncService
 
-router = APIRouter(prefix="/asis", tags=["ASIS"])
+router = ApiRouter(prefix="/asis", tags=["ASIS"])
 
 @router.post("/sync", dependencies=[Depends(admin_only)])
 def sync_asis(service: AsisSyncService = Depends(get_asis_sync_service)):

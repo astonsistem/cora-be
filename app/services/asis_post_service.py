@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from app.asis_client import AsisGateway
+from app.core.integrations.asis_client import AsisGateway
 from app.models.customer_visits import CustomerVisits
 from app.models.users import Users
 from app.services.customer_post_service import AlreadyPostedError, CustomerPostService
