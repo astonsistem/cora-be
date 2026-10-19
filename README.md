@@ -52,11 +52,13 @@ PUBLIC_API_KEY=
 | `DATABASE_URL` | Ya | URL koneksi PostgreSQL dengan format `postgresql+psycopg://<user>:<password>@<host>:<port>/<nama_database>`. Basis data harus sudah dibuat sebelum migrasi dijalankan. |
 | `SECRET_KEY` | Ya | Kunci rahasia untuk menandatangani token JWT. Gunakan rangkaian karakter acak yang panjang dan jangan dibagikan kepada pihak lain. Apabila nilainya diubah, seluruh token yang telah diterbitkan menjadi tidak berlaku. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Tidak | Masa berlaku token akses dalam satuan menit. Nilai bawaan adalah `60`. |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | Tidak | Masa berlaku refresh token dalam satuan hari. Nilai bawaan adalah `1`. |
 | `ASIS_BASE_URL` | Untuk fitur ASIS | URL dasar API ASIS yang digunakan untuk sinkronisasi *company* dan *branch*. Apabila kosong, *endpoint* `/asis` akan mengembalikan galat. |
 | `ASIS_USERNAME` | Untuk fitur ASIS | Nama pengguna untuk masuk ke API ASIS. |
 | `ASIS_PASSWORD` | Untuk fitur ASIS | Kata sandi untuk masuk ke API ASIS. |
 | `PUBLIC_API_KEY` | Untuk endpoint publik | Kunci untuk header `X-Api-Key` pada *endpoint* `/public`. Beberapa kunci dapat diisi dengan pemisah koma agar kunci dapat diganti tanpa menghentikan layanan. Apabila kosong, seluruh permintaan ke `/public` ditolak. |
 | `CUSTOMER_TRASH_RETENTION_DAYS` | Tidak | Lama customer yang dihapus disimpan sebelum dihapus permanen secara otomatis, dalam satuan hari. Nilai bawaan adalah `90`. |
+| `LOG_LEVEL` | Tidak | Tingkat log aplikasi: `DEBUG`, `INFO`, `WARNING`, atau `ERROR`. Nilai bawaan adalah `INFO`. Format log: `waktu \| LEVEL \| nama logger \| pesan`. |
 
 Perintah untuk membuat `SECRET_KEY` secara acak:
 
@@ -87,6 +89,20 @@ Akun yang dapat digunakan untuk masuk setelah seeder dijalankan:
 | `operasional` | `123456` | Operasional Manager |
 | `branch` | `123456` | Branch Manager |
 | `sales` | `123456` | Sales |
+
+Seluruh respons JSON memakai satu bentuk yang sama, baik sukses maupun galat:
+
+```json
+{
+  "success": true,
+  "message": "Data retrieved successfully",
+  "data": []
+}
+```
+
+`data` berisi hasil (objek, larik, atau `null`). Untuk galat, `success` bernilai `false`, `message` berisi penjelasannya, dan `data` bernilai `null` (khusus galat validasi 422, `data` berisi daftar rinci kesalahan dan `message` merangkumnya per kolom). Daftar data tetap mengirim total seluruh data pada header `X-Total-Count`. Penghapusan mengembalikan status 200 dengan `data: null`, bukan 204. Pengecualian: `GET /users/{id}/photo` mengembalikan gambar mentah (atau 204 apabila belum ada foto), serta `GET /` dan `GET /health`. Pembungkusan dilakukan otomatis oleh `ApiRouter` di `app/core/response/envelope.py`, dan pesan khusus per endpoint diatur pada `ResponseMessages.CUSTOM` di berkas yang sama. Setiap router baru harus dibuat dengan `ApiRouter`, bukan `APIRouter`.
+
+Autentikasi memakai dua token. `POST /auth/login` mengembalikan `access_token` dan `refresh_token`. `access_token` dikirim pada header `Authorization: Bearer <token>` untuk seluruh endpoint, sedangkan `refresh_token` hanya dapat dipakai pada `POST /auth/refresh` (body `{"refresh_token": "..."}`) untuk memperoleh pasangan token baru tanpa memasukkan kata sandi lagi. Kedua jenis token tidak dapat saling menggantikan. Permintaan refresh ditolak 401 apabila token tidak valid, kedaluwarsa, bertipe access, atau user sudah dinonaktifkan atau dihapus. Token bersifat *stateless*, sehingga refresh token yang sudah diterbitkan tidak dapat dicabut sebelum kedaluwarsa (kecuali `SECRET_KEY` diganti).
 
 Endpoint publik untuk kebutuhan *dashboard* eksternal tidak memakai token JWT, melainkan header `X-Api-Key`. Saat ini tersedia `GET /public/customer-visits/count` yang mengembalikan `{"count": <jumlah>}`. Seluruh parameter bersifat opsional dan digabung dengan logika AND: `date_from`, `date_to` (inklusif, berdasarkan waktu visit), `company_id`, `asis_company_id`, `branch_id`, dan `asis_branch_id`. Cabang sebuah visit ditentukan dari cabang customer-nya (cadangan: cabang user pembuat visit). ID yang tidak ditemukan menghasilkan 404, dan kunci yang salah menghasilkan 401.
 

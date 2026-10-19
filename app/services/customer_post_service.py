@@ -1,7 +1,7 @@
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.asis_client import AsisClient, AsisGateway
+from app.core.integrations.asis_client import AsisClient, AsisGateway
 from app.exceptions import BadRequestError
 from app.models.customer_visits import CustomerVisits
 from app.models.customers import Customers, normalize_name, normalize_phone, phones_match

@@ -3,7 +3,7 @@ import enum
 from sqlalchemy import func, Column, String, DateTime, Enum, ForeignKey, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from app.database import Base
+from app.core.database.database import Base
 
 class UserRole(str, enum.Enum):
     sales = "sales"

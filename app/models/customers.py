@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy import func, Column, String, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship, validates
-from app.database import Base
+from app.core.database.database import Base
 
 def normalize_name(value: str | None) -> str:
     text = unicodedata.normalize("NFKC", value or "")

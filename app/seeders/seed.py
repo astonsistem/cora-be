@@ -2,10 +2,10 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.database import SessionLocal
+from app.core.database.database import SessionLocal
 from app.models import Sources, Users
 from app.models.users import UserRole
-from app.security import password_hasher
+from app.core.security.security import password_hasher
 
 db = SessionLocal()
 

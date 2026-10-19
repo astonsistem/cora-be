@@ -1,13 +1,14 @@
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import Depends, status
 
+from app.core.response.envelope import ApiRouter
 from app.dependencies import get_category_service
 from app.middleware.auth_middleware import admin_only, get_current_user
 from app.schemas.category_schema import CategoryCreate, CategoryResponse, CategoryUpdate
 from app.services.category_service import CategoryService
 
-router = APIRouter(prefix="/categories", tags=["Category"])
+router = ApiRouter(prefix="/categories", tags=["Category"])
 
 @router.get("/", response_model=list[CategoryResponse])
 def list_items(skip: int = 0, limit: int = 100, service: CategoryService = Depends(get_category_service)):

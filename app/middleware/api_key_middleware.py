@@ -3,7 +3,7 @@ import secrets
 from fastapi import Security
 from fastapi.security import APIKeyHeader
 
-from app.config import settings
+from app.core.config.config import settings
 from app.exceptions import UnauthorizedError
 
 api_key_header = APIKeyHeader(name="X-Api-Key", auto_error=False)

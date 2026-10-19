@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import sessionmaker
 
-from app.config import settings
-from app.database import SessionLocal
+from app.core.config.config import settings
+from app.core.database.database import SessionLocal
 from app.models.customer_visits import CustomerVisits
 from app.models.customers import Customers
 

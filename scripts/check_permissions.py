@@ -6,10 +6,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
 
-from app.database import SessionLocal
+from app.core.database.database import SessionLocal
 from app.main import app
 from app.models.users import UserRole, Users
-from app.security import token_service
+from app.core.security.security import token_service
 
 S, B, O = "sales", "branch_manager", "operasional_manager"
 ALL = {S, B, O}
@@ -145,7 +145,7 @@ def main():
         cells = []
         for role in roles:
             response = client.get(path, headers={"Authorization": f"Bearer {tokens[role]}"})
-            body = response.json()
+            body = response.json().get("data")
             total = response.headers.get("x-total-count")
             size = len(body) if isinstance(body, list) else body.get("total_visits", "-")
             cells.append(f"{(total or size)!s:<14}")

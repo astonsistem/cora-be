@@ -2,7 +2,7 @@ import uuid
 from sqlalchemy import func, Column, String, DateTime, ForeignKey, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from app.database import Base
+from app.core.database.database import Base
 
 class CustomerVisits(Base):
     __tablename__ = "customer_visits"

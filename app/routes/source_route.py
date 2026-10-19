@@ -1,13 +1,14 @@
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import Depends, status
 
+from app.core.response.envelope import ApiRouter
 from app.dependencies import get_source_service
 from app.middleware.auth_middleware import admin_only
 from app.schemas.source_schema import SourceCreate, SourceResponse, SourceUpdate
 from app.services.source_service import SourceService
 
-router = APIRouter(prefix="/sources", tags=["Source"])
+router = ApiRouter(prefix="/sources", tags=["Source"])
 
 @router.get("/", response_model=list[SourceResponse])
 def list_items(skip: int = 0, limit: int = 100, service: SourceService = Depends(get_source_service)):

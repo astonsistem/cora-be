@@ -1,8 +1,9 @@
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import Depends, Response, status
 
+from app.core.response.envelope import ApiRouter
 from app.dependencies import get_customer_visit_service
 from app.middleware.auth_middleware import manager_only
 from app.schemas.customer_visit_schema import (
@@ -14,7 +15,7 @@ from app.schemas.customer_visit_schema import (
 from app.services import asis_post_service
 from app.services.customer_visit_service import CustomerVisitService
 
-router = APIRouter(prefix="/customer-visits", tags=["Customer Visit"])
+router = ApiRouter(prefix="/customer-visits", tags=["Customer Visit"])
 
 @router.get("/", response_model=list[CustomerVisitResponse])
 def list_visits(

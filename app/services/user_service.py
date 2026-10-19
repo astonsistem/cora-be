@@ -5,7 +5,7 @@ from sqlalchemy import select
 from app.models.user_photos import UserPhotos
 from app.models.users import UserRole, Users
 from app.exceptions import ConflictError
-from app.security import password_hasher
+from app.core.security.security import password_hasher
 from app.services.base_service import CrudService
 
 class UserService(CrudService[Users]):

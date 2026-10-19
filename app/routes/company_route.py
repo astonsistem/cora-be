@@ -1,13 +1,14 @@
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import Depends, status
 
+from app.core.response.envelope import ApiRouter
 from app.dependencies import get_company_service
 from app.middleware.auth_middleware import admin_only, get_current_user
 from app.schemas.company_schema import CompanyCreate, CompanyResponse, CompanyUpdate
 from app.services.company_service import CompanyService
 
-router = APIRouter(prefix="/companies", tags=["Company"], dependencies=[Depends(admin_only)])
+router = ApiRouter(prefix="/companies", tags=["Company"], dependencies=[Depends(admin_only)])
 
 @router.get("/", response_model=list[CompanyResponse])
 def list_items(skip: int = 0, limit: int = 100, service: CompanyService = Depends(get_company_service)):

@@ -6,7 +6,8 @@ from fastapi import Depends, FastAPI
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.core.database.database import get_db
+from app.core.log.logging_config import AppLogging
 from app.middleware.CORS_middleware import register_cors
 from app.middleware.error_handler import register_exception_handlers
 from app.services.customer_purge_service import CustomerPurgeScheduler, CustomerPurgeService
@@ -24,6 +25,8 @@ from app.routes import (
     source_route,
     user_route,
 )
+
+AppLogging.configure()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

@@ -3,7 +3,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from app.config import settings
+from app.core.config.config import settings
 
 LOGIN_PATH = "/auth/login"
 COMPANY_PATH = "/super/company/company"
