@@ -24,6 +24,8 @@ from app.routes import (
     report_route,
     source_route,
     user_route,
+    voucher_public_route,
+    voucher_route,
 )
 
 AppLogging.configure()
@@ -55,6 +57,8 @@ for module in (
     asis_route,
     public_route,
     report_route,
+    voucher_route,
+    voucher_public_route,
 ):
     app.include_router(module.router)
 

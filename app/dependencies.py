@@ -19,6 +19,8 @@ from app.services.report_service import ReportService
 from app.services.source_service import SourceService
 from app.services.user_service import UserService
 from app.services.visit_stats_service import VisitStatsService
+from app.services.voucher_redemption_service import VoucherRedemptionService
+from app.services.voucher_service import VoucherService
 
 def get_branch_service(db: Session = Depends(get_db)) -> BranchService:
     return BranchService(db)
@@ -55,6 +57,15 @@ def get_report_service(
     current_user: Users = Depends(get_current_user),
 ) -> ReportService:
     return ReportService(db, current_user)
+
+def get_voucher_service(
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
+) -> VoucherService:
+    return VoucherService(db, current_user)
+
+def get_voucher_redemption_service(db: Session = Depends(get_db)) -> VoucherRedemptionService:
+    return VoucherRedemptionService(db)
 
 def get_visit_stats_service(db: Session = Depends(get_db)) -> VisitStatsService:
     return VisitStatsService(db)

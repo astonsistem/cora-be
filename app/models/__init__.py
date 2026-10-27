@@ -6,3 +6,4 @@ from app.models.category import Category
 from app.models.sources import Sources
 from app.models.customers import Customers
 from app.models.customer_visits import CustomerVisits
+from app.models.voucher import Vouchers, VoucherRedemptions
