@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://103.87.67.169:8082"
 ]
 
 def register_cors(app: FastAPI) -> None:
