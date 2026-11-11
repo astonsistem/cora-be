@@ -6,10 +6,12 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.exceptions import BadRequestError
+from app.exceptions import BadRequestError, ForbiddenError
+from app.models.branches import Branches
 from app.models.users import Users
 from app.models.voucher import VoucherRedemptions, Vouchers
 from app.schemas.voucher_schema import RedemptionStatus, VoucherCreate, VoucherUpdate
+from app.services.company_scope import CompanyScope
 
 
 class VoucherService:
@@ -17,18 +19,31 @@ class VoucherService:
         self.db = db
         self.user = current_user
 
-    # ---------- scope ----------
     def _scope(self, query):
-        """Branch Manager hanya melihat cabangnya; OM (tanpa branch_id) melihat semua."""
-        if self.user.branch_id:
-            query = query.where(Vouchers.branch_id == self.user.branch_id)
-        return query
+        if self.user.is_superadmin:
+            return query
+        if self.user.is_admin:
+            return query.where(Vouchers.branch_id.in_(self._company_branch_ids()))
+        if self.user.branch_id is None:
+            raise ForbiddenError("Akun Anda belum terhubung ke branch")
+        return query.where(Vouchers.branch_id == self.user.branch_id)
+
+    def _company_branch_ids(self):
+        if self.user.company_id is None:
+            raise ForbiddenError("Akun Anda belum terhubung ke company")
+        return select(Branches.branch_id).where(Branches.company_id == self.user.company_id)
 
     def _resolve_branch(self, branch_id: uuid.UUID | None) -> uuid.UUID:
-        if self.user.branch_id:
+        if not self.user.is_admin:
+            if self.user.branch_id is None:
+                raise ForbiddenError("Akun Anda belum terhubung ke branch")
             return self.user.branch_id
         if branch_id is None:
             raise BadRequestError("branch_id wajib diisi")
+        branch = self.db.get(Branches, branch_id)
+        if branch is None:
+            raise BadRequestError("Cabang tidak valid")
+        CompanyScope(self.user).ensure_branch(branch)
         return branch_id
 
     def _commit(self, conflict_message: str) -> None:
@@ -38,7 +53,6 @@ class VoucherService:
             self.db.rollback()
             raise HTTPException(409, conflict_message)
 
-    # ---------- voucher ----------
     def get_or_404(self, voucher_id: uuid.UUID) -> Vouchers:
         voucher = self.db.scalar(
             self._scope(select(Vouchers).where(Vouchers.voucher_id == voucher_id))
@@ -51,7 +65,7 @@ class VoucherService:
         query = self._scope(select(Vouchers))
         if is_active is not None:
             query = query.where(Vouchers.is_active.is_(is_active))
-        if branch_id and not self.user.branch_id:
+        if branch_id and self.user.is_admin:
             query = query.where(Vouchers.branch_id == branch_id)
         return query
 
@@ -76,7 +90,7 @@ class VoucherService:
 
     def update(self, voucher: Vouchers, data: VoucherUpdate) -> Vouchers:
         values = data.model_dump(exclude_unset=True)
-        for key in ("name", "quota", "is_active"):  # kolom wajib tidak boleh dikosongkan
+        for key in ("name", "quota", "is_active"):
             if key in values and values[key] is None:
                 values.pop(key)
 
@@ -105,7 +119,6 @@ class VoucherService:
         self.db.delete(voucher)
         self.db.commit()
 
-    # ---------- penukaran ----------
     def _redemption_query(self, voucher_id, status, search, date_from, date_to):
         query = self._scope(
             select(VoucherRedemptions).join(

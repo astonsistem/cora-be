@@ -36,3 +36,7 @@ class UserResponse(UserBase):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+class ProfileResponse(UserResponse):
+    company_name: str | None = None
+    branch_name: str | None = None
