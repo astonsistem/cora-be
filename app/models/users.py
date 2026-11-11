@@ -31,6 +31,14 @@ class Users(Base):
     branch = relationship("Branches", back_populates="users")
 
     @property
+    def company_name(self) -> str | None:
+        return self.company.company_name if self.company else None
+
+    @property
+    def branch_name(self) -> str | None:
+        return self.branch.branch_name if self.branch else None
+
+    @property
     def is_superadmin(self) -> bool:
         return self.user_role == UserRole.superadmin
 
