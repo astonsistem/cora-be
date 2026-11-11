@@ -40,5 +40,6 @@ class RoleChecker:
             raise ForbiddenError("You do not have permission to perform this action")
         return current_user
 
-admin_only = RoleChecker(UserRole.operasional_manager)
-manager_only = RoleChecker(UserRole.operasional_manager, UserRole.branch_manager)
+superadmin_only = RoleChecker(UserRole.superadmin)
+admin_only = RoleChecker(UserRole.superadmin, UserRole.operasional_manager)
+manager_only = RoleChecker(UserRole.superadmin, UserRole.operasional_manager, UserRole.branch_manager)

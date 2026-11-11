@@ -7,6 +7,7 @@ from app.core.database.database import get_db
 from app.middleware.auth_middleware import get_current_user
 from app.models.users import Users
 from app.services.asis_sync_service import AsisSyncService
+from app.services.company_scope import CompanyScope
 from app.services.auth_service import AuthService
 from app.services.branch_service import BranchService
 from app.services.category_service import CategoryService
@@ -73,8 +74,11 @@ def get_visit_stats_service(db: Session = Depends(get_db)) -> VisitStatsService:
 def get_customer_post_service(db: Session = Depends(get_db)) -> CustomerPostService:
     return CustomerPostService(db)
 
-def get_asis_sync_service(db: Session = Depends(get_db)) -> AsisSyncService:
-    return AsisSyncService(db)
+def get_asis_sync_service(
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
+) -> AsisSyncService:
+    return AsisSyncService(db, scope=CompanyScope(current_user))
 
 @lru_cache
 def get_customer_sync_service() -> CustomerSyncService:

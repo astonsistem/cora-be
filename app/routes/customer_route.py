@@ -9,7 +9,7 @@ from app.dependencies import (
     get_customer_service,
     get_customer_sync_service,
 )
-from app.exceptions import ConflictError, ForbiddenError
+from app.exceptions import ConflictError
 from app.middleware.auth_middleware import admin_only, get_current_user, manager_only
 from app.models.users import Users
 from app.schemas.customer_schema import (
@@ -20,6 +20,7 @@ from app.schemas.customer_schema import (
     CustomerUpdate,
 )
 from app.services.branch_service import BranchService
+from app.services.company_scope import CompanyScope
 from app.services.customer_post_service import CustomerPostService
 from app.services.customer_service import CustomerService
 from app.services.customer_sync_service import CustomerSyncService
@@ -34,14 +35,14 @@ def sync_customers(
     sync: CustomerSyncService = Depends(get_customer_sync_service),
     current_user: Users = Depends(get_current_user),
 ):
+    scope = CompanyScope(current_user)
+    company_id = scope.company_id
     branch_id = data.branch_id if data else None
     if branch_id:
-        branch = branches.get_or_404(branch_id)
-        if current_user.company_id is not None and branch.company_id != current_user.company_id:
-            raise ForbiddenError("Branch tersebut bukan milik company Anda")
+        scope.ensure_branch(branches.get_or_404(branch_id))
     if not sync.start(branch_id):
         raise ConflictError("Sync customer sedang berjalan")
-    background_tasks.add_task(sync.run, branch_id, current_user.company_id)
+    background_tasks.add_task(sync.run, branch_id, company_id)
     return sync.status()
 
 

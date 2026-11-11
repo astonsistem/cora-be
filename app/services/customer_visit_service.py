@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.exceptions import BadRequestError, ForbiddenError
 from app.models.customer_visits import CustomerVisits
-from app.models.users import UserRole, Users
+from app.models.users import Users
 from app.schemas.customer_visit_schema import CustomerVisitCreate
 from app.services.base_service import CrudService
 from app.services.customer_service import CustomerService
@@ -26,8 +26,11 @@ class CustomerVisitService(CrudService[CustomerVisits]):
 
     def get_or_404(self, obj_id) -> CustomerVisits:
         visit = super().get_or_404(obj_id)
-        if self.user.user_role == UserRole.sales and visit.user_id != self.user.user_id:
-            raise ForbiddenError("You can only access your own visits")
+        in_scope = self.db.scalar(
+            self.scope.apply(select(CustomerVisits.visit_id).where(CustomerVisits.visit_id == visit.visit_id))
+        )
+        if in_scope is None:
+            raise ForbiddenError("You can only access visits within your scope")
         return visit
 
     @staticmethod
