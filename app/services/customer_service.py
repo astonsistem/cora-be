@@ -7,7 +7,7 @@ from app.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFo
 from app.models.branches import Branches
 from app.models.customer_visits import CustomerVisits
 from app.models.customers import Customers, normalize_name, normalize_phone, phones_match
-from app.models.users import UserRole, Users
+from app.models.users import Users
 from app.schemas.customer_schema import CustomerCreate
 from app.services.base_service import CrudService
 
@@ -32,8 +32,8 @@ class CustomerService(CrudService[Customers]):
         self.user = current_user
 
     def _scope(self, query):
-        if self.user.user_role == UserRole.operasional_manager:
-            if self.user.company_id is None:
+        if self.user.is_admin:
+            if self.user.is_superadmin or self.user.company_id is None:
                 return query
             return query.join(Branches, Customers.branch_id == Branches.branch_id).where(
                 Branches.company_id == self.user.company_id
@@ -124,13 +124,13 @@ class CustomerService(CrudService[Customers]):
         return None
 
     def _resolve_branch(self, branch_id: uuid.UUID | None) -> Branches:
-        if self.user.user_role == UserRole.operasional_manager:
+        if self.user.is_admin:
             if branch_id is None:
                 raise BadRequestError("branch_id wajib diisi oleh Operasional Manager")
             branch = self.db.get(Branches, branch_id)
             if branch is None:
                 raise BadRequestError("Branch tidak ditemukan")
-            if self.user.company_id is not None and branch.company_id != self.user.company_id:
+            if not self.user.is_superadmin and self.user.company_id is not None and branch.company_id != self.user.company_id:
                 raise ForbiddenError("Branch tersebut bukan milik company Anda")
             return branch
 

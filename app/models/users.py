@@ -9,6 +9,7 @@ class UserRole(str, enum.Enum):
     sales = "sales"
     branch_manager = "branch_manager"
     operasional_manager = "operasional_manager"
+    superadmin = "superadmin"
 
 class Users(Base):
     __tablename__ = "users"
@@ -28,3 +29,11 @@ class Users(Base):
 
     company = relationship("Companies")
     branch = relationship("Branches", back_populates="users")
+
+    @property
+    def is_superadmin(self) -> bool:
+        return self.user_role == UserRole.superadmin
+
+    @property
+    def is_admin(self) -> bool:
+        return self.user_role in (UserRole.operasional_manager, UserRole.superadmin)

@@ -4,7 +4,7 @@ from sqlalchemy import select
 
 from app.models.user_photos import UserPhotos
 from app.models.users import UserRole, Users
-from app.exceptions import ConflictError
+from app.exceptions import ConflictError, ForbiddenError
 from app.core.security.security import password_hasher
 from app.services.base_service import CrudService
 
@@ -31,6 +31,13 @@ class UserService(CrudService[Users]):
             query = query.where(Users.branch_id == current_user.branch_id)
         return list(self.db.scalars(query.offset(skip).limit(limit)))
 
+    @staticmethod
+    def ensure_can_manage(actor: Users, target_role: UserRole | None, current_role: UserRole | None = None) -> None:
+        if actor.is_superadmin:
+            return
+        if UserRole.superadmin in (target_role, current_role):
+            raise ForbiddenError("Only a superadmin can manage superadmin accounts")
+
     def get_by_username(self, username: str) -> Users | None:
         return self.db.scalar(select(Users).where(Users.username == username))
 
@@ -39,6 +46,8 @@ class UserService(CrudService[Users]):
             raise ConflictError("Username already exists")
 
         values = data.model_dump(exclude={"password"})
+        if data.user_role == UserRole.superadmin:
+            values.update(company_id=None, branch_id=None)
         return Users(**values, password=password_hasher.hash(data.password))
 
     def _prepare_update(self, user: Users, values: dict) -> dict:
@@ -48,6 +57,9 @@ class UserService(CrudService[Users]):
 
         if "password" in values:
             values["password"] = password_hasher.hash(values["password"])
+
+        if values.get("user_role", user.user_role) == UserRole.superadmin:
+            values.update(company_id=None, branch_id=None)
 
         return values
 

@@ -6,12 +6,13 @@
 
 Fitur utama:
 
-- **Autentikasi** menggunakan JWT dengan tiga peran (*role*), yaitu `sales`, `branch_manager`, dan `operasional_manager`.
+- **Autentikasi** menggunakan JWT dengan empat peran (*role*), yaitu `sales`, `branch_manager`, `operasional_manager`, dan `superadmin`.
 - **Customer visit**: sales mencatat kunjungan pelanggan (nama, nomor telepon, *source*, *category*, dan catatan). Data yang dapat dilihat dibatasi berdasarkan peran:
   - Sales hanya dapat melihat kunjungan miliknya sendiri.
   - Branch Manager dapat melihat kunjungan sales pada cabangnya.
-  - Operasional Manager dapat melihat kunjungan sales pada perusahaannya.
-- **Master data**: *category*, *source*, *company*, dan *branch*. Seluruh pengguna yang telah masuk (*login*) dapat membaca data ini, tetapi hanya Operasional Manager yang dapat mengubahnya.
+  - Operasional Manager dapat melihat kunjungan sales dan branch manager pada perusahaannya.
+  - Superadmin memiliki hak akses seperti Operasional Manager, tetapi tanpa pembatasan perusahaan (seluruh company dan branch).
+- **Master data**: *category*, *source*, *company*, dan *branch*. Hak akses *company*: Operasional Manager dan Superadmin dapat membaca, sedangkan hanya Superadmin yang dapat menambah, mengubah, dan menghapus. *Branch* dapat dibaca sesuai cakupan pengguna dan diubah oleh Operasional Manager dan Superadmin. Hanya Superadmin yang dapat membuat akun user (`POST /users`) dan menerapkan sync ASIS untuk company. Mengubah atau menghapus akun berperan `superadmin` juga hanya bisa dilakukan Superadmin. Sync dari ASIS dibatasi per company: Operasional Manager hanya dapat melihat dan menerapkan perubahan branch milik company-nya (`GET /asis/preview`, `POST /asis/apply`) dan menarik customer branch company-nya (`POST /customers/sync`); akun tanpa company ditolak 403. `POST /asis/sync` bergantung pada peran: Superadmin menyinkronkan seluruh company, branch, dan category, sedangkan Operasional Manager hanya menyinkronkan branch milik company-nya. Penerapan company (`POST /asis/apply` dengan `company_ids`) hanya untuk Superadmin. Akun Superadmin tidak terikat company maupun branch (kolom `company_id` dan `branch_id` selalu kosong). Superadmin menyinkronkan seluruh data ASIS sekaligus lewat `POST /asis/sync` dan `POST /customers/sync` tanpa memilih company atau branch. Karena tidak terikat company, Superadmin memilih company dan branch sendiri saat membuat customer visit (`branch_id` untuk customer baru).
 - **Master Customer**: daftar customer per cabang yang ditarik dari ASIS (status *sudah diposting*) dan customer yang didaftarkan dari CORA (status *belum diposting*). Customer visit dipilih dari Master Customer, dan posting ke ASIS dilakukan dari customer, dengan pengecekan apakah customer tersebut sudah ada di ASIS.
 - **Manajemen pengguna** dan **foto profil** yang disimpan langsung di dalam basis data.
 - **Sinkronisasi ASIS**: mengambil data *company* dan *branch* dari sistem ASIS.
@@ -86,6 +87,7 @@ Akun yang dapat digunakan untuk masuk setelah seeder dijalankan:
 
 | Username | Password | Role |
 |---|---|---|
+| `superadmin` | `123456` | Superadmin |
 | `operasional` | `123456` | Operasional Manager |
 | `branch` | `123456` | Branch Manager |
 | `sales` | `123456` | Sales |

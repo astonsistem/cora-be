@@ -11,40 +11,41 @@ from app.main import app
 from app.models.users import UserRole, Users
 from app.core.security.security import token_service
 
-S, B, O = "sales", "branch_manager", "operasional_manager"
-ALL = {S, B, O}
-MANAGER = {B, O}
-OM = {O}
-SHORT = {S: "Sales", B: "BM", O: "OM"}
+S, B, O, A = "sales", "branch_manager", "operasional_manager", "superadmin"
+ALL = {S, B, O, A}
+MANAGER = {B, O, A}
+OM = {O, A}
+SUPER = {A}
+SHORT = {S: "Sales", B: "BM", O: "OM", A: "SA"}
 
 
 EXPECTED = [
     # Auth: semua role boleh mengakses profil sendiri
     ("GET", "/auth/me", ALL),
 
-    # Master data: OM only
-    ("GET", "/users/", OM),
+    # Master data: semua role boleh membaca (scope data tetap berlaku), hanya OM yang mengubah
+    ("GET", "/users/", ALL),
     ("GET", "/users/{id}", OM),
-    ("POST", "/users/", OM),
+    ("POST", "/users/", SUPER),
     ("PATCH", "/users/{id}", OM),
     ("DELETE", "/users/{id}", OM),
 
     ("GET", "/companies/", OM),
-    ("POST", "/companies/", OM),
-    ("PATCH", "/companies/{id}", OM),
-    ("DELETE", "/companies/{id}", OM),
+    ("POST", "/companies/", SUPER),
+    ("PATCH", "/companies/{id}", SUPER),
+    ("DELETE", "/companies/{id}", SUPER),
 
-    ("GET", "/branches/", OM),
+    ("GET", "/branches/", ALL),
     ("POST", "/branches/", OM),
     ("PATCH", "/branches/{id}", OM),
     ("DELETE", "/branches/{id}", OM),
 
-    ("GET", "/categories/", OM),
+    ("GET", "/categories/", ALL),
     ("POST", "/categories/", OM),
     ("PATCH", "/categories/{id}", OM),
     ("DELETE", "/categories/{id}", OM),
 
-    ("GET", "/sources/", OM),
+    ("GET", "/sources/", ALL),
     ("POST", "/sources/", OM),
     ("PATCH", "/sources/{id}", OM),
     ("DELETE", "/sources/{id}", OM),
@@ -83,6 +84,9 @@ EXPECTED = [
     ("PATCH", "/customer-visits/{id}", ALL),
     ("DELETE", "/customer-visits/{id}", ALL),
 
+    ("GET", "/vouchers/", MANAGER),
+    ("POST", "/vouchers/", MANAGER),
+
     # Reports: hanya OM dan BM
     ("GET", "/reports/summary", MANAGER),
     ("GET", "/reports/visit-trend", MANAGER),
@@ -119,7 +123,7 @@ def call(client, token, method, path):
 
 def main():
     users = login_users()
-    roles = [role for role in (S, B, O) if role in users]
+    roles = [role for role in (S, B, O, A) if role in users]
     tokens = {role: token_service.create_access_token(users[role][1]) for role in roles}
     client = TestClient(app)
 
@@ -147,7 +151,7 @@ def main():
             response = client.get(path, headers={"Authorization": f"Bearer {tokens[role]}"})
             body = response.json().get("data")
             total = response.headers.get("x-total-count")
-            size = len(body) if isinstance(body, list) else body.get("total_visits", "-")
+            size = len(body) if isinstance(body, list) else body.get("total_visits", "-") if isinstance(body, dict) else response.status_code
             cells.append(f"{(total or size)!s:<14}")
         print(f"{'GET ' + path:<46}" + "".join(cells))
     pending = {}

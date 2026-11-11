@@ -19,6 +19,7 @@ SOURCES = [
 ]
 
 USERS = [
+    {"username": "superadmin", "first_name": "Super", "last_name": "Admin", "user_role": UserRole.superadmin, "password": "123456"},
     {"username": "operasional", "first_name": "Admin", "last_name": "Operasional", "user_role": UserRole.operasional_manager, "password": "123456"},
     {"username": "branch", "first_name": "Branch", "last_name": "Manager", "user_role": UserRole.branch_manager, "password": "123456"},
     {"username": "sales", "first_name": "Sales", "last_name": "Satu", "user_role": UserRole.sales, "password": "123456"},

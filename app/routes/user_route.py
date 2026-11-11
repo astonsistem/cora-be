@@ -5,7 +5,7 @@ from fastapi import Depends, File, Response, UploadFile, status
 from app.core.response.envelope import ApiRouter
 from app.dependencies import get_user_service
 from app.exceptions import BadRequestError, ForbiddenError, NotFoundError, PayloadTooLargeError, UnsupportedMediaError
-from app.middleware.auth_middleware import admin_only, get_current_user
+from app.middleware.auth_middleware import admin_only, get_current_user, superadmin_only
 from app.models.users import UserRole, Users
 from app.schemas.user_schema import UserCreate, UserResponse, UserUpdate
 from app.services.user_service import UserService
@@ -15,7 +15,7 @@ router = ApiRouter(prefix="/users", tags=["User"])
 MAX_PHOTO_BYTES = 2 * 1024 * 1024
 
 def _require_self_or_om(current_user: Users, user_id: uuid.UUID):
-    if current_user.user_role != UserRole.operasional_manager and current_user.user_id != user_id:
+    if not current_user.is_admin and current_user.user_id != user_id:
         raise ForbiddenError("You do not have permission to perform this action")
 
 def _sniff_image_type(data: bytes) -> str | None:
@@ -88,14 +88,27 @@ def delete_user_photo(
     _require_self_or_om(current_user, user_id)
     service.delete_photo(service.get_or_404(user_id))
 
-@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(admin_only)])
+@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(superadmin_only)])
 def create_user(data: UserCreate, service: UserService = Depends(get_user_service)):
     return service.create(data)
 
-@router.patch("/{user_id}", response_model=UserResponse, dependencies=[Depends(admin_only)])
-def update_user(user_id: uuid.UUID, data: UserUpdate, service: UserService = Depends(get_user_service)):
-    return service.update(service.get_or_404(user_id), data)
+@router.patch("/{user_id}", response_model=UserResponse)
+def update_user(
+    user_id: uuid.UUID,
+    data: UserUpdate,
+    service: UserService = Depends(get_user_service),
+    current_user: Users = Depends(admin_only),
+):
+    user = service.get_or_404(user_id)
+    service.ensure_can_manage(current_user, data.user_role, user.user_role)
+    return service.update(user, data)
 
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(admin_only)])
-def delete_user(user_id: uuid.UUID, service: UserService = Depends(get_user_service)):
-    service.delete(service.get_or_404(user_id))
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(
+    user_id: uuid.UUID,
+    service: UserService = Depends(get_user_service),
+    current_user: Users = Depends(admin_only),
+):
+    user = service.get_or_404(user_id)
+    service.ensure_can_manage(current_user, None, user.user_role)
+    service.delete(user)
