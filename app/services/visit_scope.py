@@ -1,4 +1,4 @@
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, true
 
 from app.models.customer_visits import CustomerVisits
 from app.models.users import UserRole, Users
@@ -8,6 +8,8 @@ class VisitScope:
         self.user = user
 
     def user_condition(self):
+        if self.user.is_superadmin:
+            return true()
         own = Users.user_id == self.user.user_id
         if self.user.user_role == UserRole.sales:
             return own

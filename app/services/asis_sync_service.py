@@ -9,6 +9,8 @@ from app.exceptions import BadRequestError
 from app.models.branches import Branches
 from app.models.category import Category
 from app.models.companies import Companies
+from app.exceptions import ForbiddenError
+from app.services.company_scope import CompanyScope
 
 
 def _pick(item: dict, *keys: str):
@@ -157,6 +159,13 @@ class BranchSyncer(BaseSyncer):
                 created += 1
         return {"created": created, "updated": updated, "without_company": without_company}
 
+    def sync_company(self, gateway: AsisGateway, asis_company_id: str) -> dict:
+        items = self.fetch(gateway)
+        parsed = [p for p in map(self.parse, items) if p and p[1] == asis_company_id]
+        counts = self.upsert(parsed, datetime.now())
+        self.db.commit()
+        return {**counts, "skipped": len(items) - len(parsed)}
+
     def preview(self, gateway):
         local_companies = {c.asis_company_id for c in self.db.scalars(select(Companies))}
         local = {b.asis_branch_id: b for b in self.db.scalars(select(Branches))}
@@ -233,9 +242,10 @@ class CategorySyncer(BaseSyncer):
         return result
 
 class AsisSyncService:
-    def __init__(self, db: Session, gateway: AsisGateway | None = None):
+    def __init__(self, db: Session, gateway: AsisGateway | None = None, scope: CompanyScope | None = None):
         self.db = db
         self._gateway = gateway
+        self.scope = scope
         self.companies = CompanySyncer(db)
         self.branches = BranchSyncer(db)
         self.categories = CategorySyncer(db)
@@ -247,6 +257,8 @@ class AsisSyncService:
         return self._gateway
 
     def sync_all(self) -> dict:
+        if self._restricted:
+            return self._sync_own_branches()
         return {
             "companies": self.companies.sync(self.gateway),
             "branches": self.branches.sync(self.gateway),
@@ -254,11 +266,52 @@ class AsisSyncService:
         }
 
     def preview(self) -> dict:
-        return {
+        self._require_scope()
+        result = {
             "companies": self.companies.preview(self.gateway),
             "branches": self.branches.preview(self.gateway),
             "categories": self.categories.preview(self.gateway),
         }
+        return self._limit_preview(result) if self._restricted else result
+
+    def _sync_own_branches(self) -> dict:
+        own_asis_id = self.scope.asis_company_id(self.db)
+        if not own_asis_id:
+            raise BadRequestError("Company Anda belum terhubung ke ASIS")
+        return {"branches": self.branches.sync_company(self.gateway, own_asis_id)}
+
+    @property
+    def _restricted(self) -> bool:
+        return self.scope is not None and self.scope.restricted
+
+    def _require_scope(self) -> None:
+        if self._restricted:
+            self.scope.company_id
+
+    def _limit_preview(self, preview: dict) -> dict:
+        own_asis_id = self.scope.asis_company_id(self.db)
+        own_branches = {
+            b.asis_branch_id
+            for b in self.db.scalars(select(Branches).where(Branches.company_id == self.scope.company_id))
+        }
+        companies, branches = preview["companies"], preview["branches"]
+        return {
+            "companies": {
+                "new": [],
+                "changed": [c for c in companies["changed"] if c["asis_id"] == own_asis_id],
+            },
+            "branches": {
+                "new": [b for b in branches["new"] if own_asis_id and b["asis_company_id"] == own_asis_id],
+                "changed": [b for b in branches["changed"] if b["asis_id"] in own_branches],
+            },
+            "categories": preview["categories"],
+        }
+
+    def _ensure_branches_in_scope(self, wanted: set[str], asis_branches: dict) -> None:
+        own_asis_id = self.scope.asis_company_id(self.db)
+        outside = sorted(i for i in wanted if not own_asis_id or asis_branches[i][1] != own_asis_id)
+        if outside:
+            raise ForbiddenError("Branch bukan milik company Anda: " + ", ".join(outside))
 
     def apply_selected(
         self,
@@ -266,6 +319,7 @@ class AsisSyncService:
         branch_ids: list[str],
         category_ids: list[str] | None = None,
     ) -> None:
+        self._require_scope()
         wanted_companies = set(company_ids)
         wanted_branches = set(branch_ids)
 
@@ -279,6 +333,8 @@ class AsisSyncService:
         asis_branches = self.branches.index(self.gateway) if wanted_branches else {}
         self._ensure_exist(self.companies, wanted_companies, asis_companies)
         self._ensure_exist(self.branches, wanted_branches, asis_branches)
+        if self._restricted:
+            self._ensure_branches_in_scope(wanted_branches, asis_branches)
 
         local_company_ids = {c.asis_company_id for c in self.db.scalars(select(Companies))}
         available = local_company_ids | wanted_companies

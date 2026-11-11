@@ -2,8 +2,9 @@ from fastapi import Depends, status
 
 from app.core.response.envelope import ApiRouter
 from app.dependencies import get_asis_sync_service
-from app.exceptions import BadRequestError
-from app.middleware.auth_middleware import admin_only
+from app.exceptions import BadRequestError, ForbiddenError
+from app.middleware.auth_middleware import admin_only, get_current_user
+from app.models.users import Users
 from app.schemas.asis_schema import AsisApplyRequest
 from app.services.asis_sync_service import AsisSyncService
 
@@ -18,7 +19,13 @@ def preview_asis(service: AsisSyncService = Depends(get_asis_sync_service)):
     return service.preview()
 
 @router.post("/apply", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(admin_only)])
-def apply_asis(data: AsisApplyRequest, service: AsisSyncService = Depends(get_asis_sync_service)):
+def apply_asis(
+    data: AsisApplyRequest,
+    service: AsisSyncService = Depends(get_asis_sync_service),
+    current_user: Users = Depends(get_current_user),
+):
+    if data.company_ids and not current_user.is_superadmin:
+        raise ForbiddenError("Only a superadmin can apply company changes")
     if not data.company_ids and not data.branch_ids and data.category_ids == []:
         raise BadRequestError("Tidak ada data yang dipilih")
     service.apply_selected(data.company_ids, data.branch_ids, data.category_ids)
