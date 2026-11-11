@@ -1,181 +1,105 @@
 # CORA Backend
 
-## 1. Penjelasan Project
+**CORA (Customer Observation & Recording Application)** adalah aplikasi untuk mencatat kunjungan pelanggan (*customer visit*) oleh tim sales Amazink People Group. Repositori ini berisi backend-nya (FastAPI + PostgreSQL).
 
-**CORA (Customer Observation & Recording Application)** adalah aplikasi yang digunakan untuk mencatat aktivitas kunjungan pelanggan (*customer visit*) oleh tim sales di Amazink People Group. Repositori ini berisi sisi backend dari aplikasi tersebut.
+Dokumentasi seluruh endpoint ada di Swagger (`/docs`) saat server berjalan.
 
-Fitur utama:
+## Fitur
 
-- **Autentikasi** menggunakan JWT dengan empat peran (*role*), yaitu `sales`, `branch_manager`, `operasional_manager`, dan `superadmin`.
-- **Customer visit**: sales mencatat kunjungan pelanggan (nama, nomor telepon, *source*, *category*, dan catatan). Data yang dapat dilihat dibatasi berdasarkan peran:
-  - Sales hanya dapat melihat kunjungan miliknya sendiri.
-  - Branch Manager dapat melihat kunjungan sales pada cabangnya.
-  - Operasional Manager dapat melihat kunjungan sales dan branch manager pada perusahaannya.
-  - Superadmin memiliki hak akses seperti Operasional Manager, tetapi tanpa pembatasan perusahaan (seluruh company dan branch).
-- **Master data**: *category*, *source*, *company*, dan *branch*. Hak akses *company*: Operasional Manager dan Superadmin dapat membaca, sedangkan hanya Superadmin yang dapat menambah, mengubah, dan menghapus. *Branch* dapat dibaca sesuai cakupan pengguna dan diubah oleh Operasional Manager dan Superadmin. Hanya Superadmin yang dapat membuat akun user (`POST /users`) dan menerapkan sync ASIS untuk company. Mengubah atau menghapus akun berperan `superadmin` juga hanya bisa dilakukan Superadmin. Sync dari ASIS dibatasi per company: Operasional Manager hanya dapat melihat dan menerapkan perubahan branch milik company-nya (`GET /asis/preview`, `POST /asis/apply`) dan menarik customer branch company-nya (`POST /customers/sync`); akun tanpa company ditolak 403. `POST /asis/sync` bergantung pada peran: Superadmin menyinkronkan seluruh company, branch, dan category, sedangkan Operasional Manager hanya menyinkronkan branch milik company-nya. Penerapan company (`POST /asis/apply` dengan `company_ids`) hanya untuk Superadmin. Akun Superadmin tidak terikat company maupun branch (kolom `company_id` dan `branch_id` selalu kosong). Superadmin menyinkronkan seluruh data ASIS sekaligus lewat `POST /asis/sync` dan `POST /customers/sync` tanpa memilih company atau branch. Karena tidak terikat company, Superadmin memilih company dan branch sendiri saat membuat customer visit (`branch_id` untuk customer baru).
-- **Master Customer**: daftar customer per cabang yang ditarik dari ASIS (status *sudah diposting*) dan customer yang didaftarkan dari CORA (status *belum diposting*). Customer visit dipilih dari Master Customer, dan posting ke ASIS dilakukan dari customer, dengan pengecekan apakah customer tersebut sudah ada di ASIS.
-- **Manajemen pengguna** dan **foto profil** yang disimpan langsung di dalam basis data.
-- **Sinkronisasi ASIS**: mengambil data *company* dan *branch* dari sistem ASIS.
+- **Autentikasi JWT** (access token dan refresh token) dengan empat role.
+- **Customer visit**, **Master Customer**, **voucher**, **laporan** (`/reports`), manajemen user dan foto profil.
+- **Master data**: category, source, company, branch.
+- **Sync ASIS**: menarik company, branch, category, dan customer dari sistem ASIS.
+- **Endpoint publik** (`/public`) memakai header `X-Api-Key`.
 
-Dokumentasi seluruh *endpoint* tersedia pada Swagger (`/docs`) saat server berjalan.
+## Role dan Hak Akses
 
-## 2. Tech Stack
-
-| Part | Tech |
-|---|---|
-| Bahasa pemrograman | Python 3.10+ |
-| Framework | FastAPI, dijalankan menggunakan Uvicorn |
-| Basis data | PostgreSQL |
-| ORM dan migrasi | SQLAlchemy 2, Alembic |
-| Driver basis data | psycopg 3 |
-| Validasi data | Pydantic |
-| Autentikasi | PyJWT (JWT), bcrypt (enkripsi kata sandi) |
-| HTTP client | httpx (untuk memanggil API ASIS) |
-| Unggah berkas | python-multipart |
-| Konfigurasi | python-dotenv |
-
-## 3. Environment Variable
-
-Salin berkas `.env.example` menjadi `.env`, kemudian isi nilainya. Berkas `.env` telah diabaikan oleh git dan tidak boleh di-*commit*.
-
-```env
-DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/dbname
-SECRET_KEY=change-me
-ACCESS_TOKEN_EXPIRE_MINUTES=60
-ASIS_BASE_URL=http://host:port/asis
-ASIS_USERNAME=
-ASIS_PASSWORD=
-PUBLIC_API_KEY=
-```
-
-| Variable | Wajib | Keterangan |
+| Role | Cakupan data | Catatan |
 |---|---|---|
-| `DATABASE_URL` | Ya | URL koneksi PostgreSQL dengan format `postgresql+psycopg://<user>:<password>@<host>:<port>/<nama_database>`. Basis data harus sudah dibuat sebelum migrasi dijalankan. |
-| `SECRET_KEY` | Ya | Kunci rahasia untuk menandatangani token JWT. Gunakan rangkaian karakter acak yang panjang dan jangan dibagikan kepada pihak lain. Apabila nilainya diubah, seluruh token yang telah diterbitkan menjadi tidak berlaku. |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Tidak | Masa berlaku token akses dalam satuan menit. Nilai bawaan adalah `60`. |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | Tidak | Masa berlaku refresh token dalam satuan hari. Nilai bawaan adalah `1`. |
-| `ASIS_BASE_URL` | Untuk fitur ASIS | URL dasar API ASIS yang digunakan untuk sinkronisasi *company* dan *branch*. Apabila kosong, *endpoint* `/asis` akan mengembalikan galat. |
-| `ASIS_USERNAME` | Untuk fitur ASIS | Nama pengguna untuk masuk ke API ASIS. |
-| `ASIS_PASSWORD` | Untuk fitur ASIS | Kata sandi untuk masuk ke API ASIS. |
-| `PUBLIC_API_KEY` | Untuk endpoint publik | Kunci untuk header `X-Api-Key` pada *endpoint* `/public`. Beberapa kunci dapat diisi dengan pemisah koma agar kunci dapat diganti tanpa menghentikan layanan. Apabila kosong, seluruh permintaan ke `/public` ditolak. |
-| `CUSTOMER_TRASH_RETENTION_DAYS` | Tidak | Lama customer yang dihapus disimpan sebelum dihapus permanen secara otomatis, dalam satuan hari. Nilai bawaan adalah `90`. |
-| `LOG_LEVEL` | Tidak | Tingkat log aplikasi: `DEBUG`, `INFO`, `WARNING`, atau `ERROR`. Nilai bawaan adalah `INFO`. Format log: `waktu \| LEVEL \| nama logger \| pesan`. |
+| `sales` | Visit miliknya sendiri | |
+| `branch_manager` | Visit sales di branch-nya | Mengelola voucher branch-nya |
+| `operasional_manager` | Company miliknya | Sync ASIS hanya untuk company-nya. Tidak bisa mengubah company |
+| `superadmin` | Semua company dan branch | Tidak terikat company/branch. Satu-satunya yang bisa membuat user, serta menambah/mengubah/menghapus company |
 
-Perintah untuk membuat `SECRET_KEY` secara acak:
+Superadmin memilih company dan branch sendiri saat membuat customer visit.
+
+## Tech Stack
+
+Python 3.10+, FastAPI (Uvicorn), PostgreSQL, SQLAlchemy 2 + Alembic, psycopg 3, Pydantic, PyJWT, bcrypt, httpx.
+
+## Instalasi
+
+Prasyarat: Python 3.10+ dan PostgreSQL yang sudah berjalan.
 
 ```bash
-python -c "import secrets; print(secrets.token_urlsafe(48))"
+git clone <url-repo>
+cd BE_CORA
+python -m venv .venv
+.venv\Scripts\activate        # Windows (Linux/macOS: source .venv/bin/activate)
+pip install -r requirements.txt
+cp .env.example .env          # lalu isi nilainya
+alembic upgrade head
+python -m app.seeders.seed    # data awal dan akun contoh
 ```
 
-## 4. Menjalankan Project
+Seeder menghapus semua user yang ada. Jangan dijalankan di database yang sudah berisi data.
 
-Pastikan seluruh langkah pada bagian **Installation** telah dilakukan. Setelah itu, aktifkan *virtual environment* dan jalankan perintah berikut:
+Setelah itu, Superadmin atau OM menjalankan Sync ASIS untuk mengisi company, branch, dan category. Master Customer ditarik lewat `POST /customers/sync` (berjalan di background, status di `GET /customers/sync/status`).
+
+## Menjalankan
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-Server dapat diakses melalui alamat berikut:
-
 - API: `http://127.0.0.1:8000`
-- Swagger (dokumentasi interaktif): `http://127.0.0.1:8000/docs`
-- Pemeriksaan koneksi basis data: `http://127.0.0.1:8000/health`
+- Swagger: `http://127.0.0.1:8000/docs`
+- Cek database: `http://127.0.0.1:8000/health`
 
-Konfigurasi CORS hanya mengizinkan *frontend* dari `http://localhost:5173` dan `http://127.0.0.1:5173`. Apabila *frontend* dijalankan pada alamat lain, tambahkan alamat tersebut pada berkas `app/middleware/CORS_middleware.py`.
+CORS hanya mengizinkan `http://localhost:5173` dan `http://127.0.0.1:5173`. Untuk alamat FE lain, ubah `app/middleware/CORS_middleware.py`.
 
-Akun yang dapat digunakan untuk masuk setelah seeder dijalankan:
+Akun contoh setelah seeder (password `123456`): `superadmin`, `operasional`, `branch`, `sales`.
 
-| Username | Password | Role |
+## Environment Variable
+
+| Variable | Wajib | Keterangan |
 |---|---|---|
-| `superadmin` | `123456` | Superadmin |
-| `operasional` | `123456` | Operasional Manager |
-| `branch` | `123456` | Branch Manager |
-| `sales` | `123456` | Sales |
+| `DATABASE_URL` | Ya | `postgresql+psycopg://user:password@host:5432/dbname` |
+| `SECRET_KEY` | Ya | Kunci penanda JWT. Jika diganti, semua token tidak berlaku |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Tidak | Bawaan `60` |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | Tidak | Bawaan `1` |
+| `ASIS_BASE_URL`, `ASIS_USERNAME`, `ASIS_PASSWORD` | Untuk fitur ASIS | Akses ke API ASIS |
+| `PUBLIC_API_KEY` | Untuk `/public` | Header `X-Api-Key`. Boleh beberapa kunci dipisah koma |
+| `CUSTOMER_TRASH_RETENTION_DAYS` | Tidak | Lama customer terhapus disimpan sebelum dihapus permanen. Bawaan `90` |
+| `LOG_LEVEL` | Tidak | `DEBUG`, `INFO` (bawaan), `WARNING`, `ERROR` |
 
-Seluruh respons JSON memakai satu bentuk yang sama, baik sukses maupun galat:
-
-```json
-{
-  "success": true,
-  "message": "Data retrieved successfully",
-  "data": []
-}
-```
-
-`data` berisi hasil (objek, larik, atau `null`). Untuk galat, `success` bernilai `false`, `message` berisi penjelasannya, dan `data` bernilai `null` (khusus galat validasi 422, `data` berisi daftar rinci kesalahan dan `message` merangkumnya per kolom). Daftar data tetap mengirim total seluruh data pada header `X-Total-Count`. Penghapusan mengembalikan status 200 dengan `data: null`, bukan 204. Pengecualian: `GET /users/{id}/photo` mengembalikan gambar mentah (atau 204 apabila belum ada foto), serta `GET /` dan `GET /health`. Pembungkusan dilakukan otomatis oleh `ApiRouter` di `app/core/response/envelope.py`, dan pesan khusus per endpoint diatur pada `ResponseMessages.CUSTOM` di berkas yang sama. Setiap router baru harus dibuat dengan `ApiRouter`, bukan `APIRouter`.
-
-Autentikasi memakai dua token. `POST /auth/login` mengembalikan `access_token` dan `refresh_token`. `access_token` dikirim pada header `Authorization: Bearer <token>` untuk seluruh endpoint, sedangkan `refresh_token` hanya dapat dipakai pada `POST /auth/refresh` (body `{"refresh_token": "..."}`) untuk memperoleh pasangan token baru tanpa memasukkan kata sandi lagi. Kedua jenis token tidak dapat saling menggantikan. Permintaan refresh ditolak 401 apabila token tidak valid, kedaluwarsa, bertipe access, atau user sudah dinonaktifkan atau dihapus. Token bersifat *stateless*, sehingga refresh token yang sudah diterbitkan tidak dapat dicabut sebelum kedaluwarsa (kecuali `SECRET_KEY` diganti).
-
-Endpoint publik untuk kebutuhan *dashboard* eksternal tidak memakai token JWT, melainkan header `X-Api-Key`. Saat ini tersedia `GET /public/customer-visits/count` yang mengembalikan `{"count": <jumlah>}`. Seluruh parameter bersifat opsional dan digabung dengan logika AND: `date_from`, `date_to` (inklusif, berdasarkan waktu visit), `company_id`, `asis_company_id`, `branch_id`, dan `asis_branch_id`. Cabang sebuah visit ditentukan dari cabang customer-nya (cadangan: cabang user pembuat visit). ID yang tidak ditemukan menghasilkan 404, dan kunci yang salah menghasilkan 401.
+Membuat `SECRET_KEY` acak:
 
 ```bash
-curl -H "X-Api-Key: <kunci>" "http://127.0.0.1:8000/public/customer-visits/count?date_from=2026-10-01&date_to=2026-10-31&asis_branch_id=<id>"
+python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-Laporan aktivitas visit tersedia di `/reports` (memerlukan token JWT) dan seluruhnya mengikuti cakupan data tiap *role*: Operasional Manager melihat visit miliknya serta Sales dan Branch Manager di *company*-nya, Branch Manager melihat miliknya serta Sales di cabangnya, dan Sales hanya melihat visit miliknya. Seluruh parameter bersifat opsional: `date_from`, `date_to` (inklusif, berdasarkan waktu visit), `branch_id`, `user_id` (hanya visit milik user tersebut; 404 apabila user tidak ada atau berada di luar cakupan *role* pemanggil), dan `role` (`all`, `sales`, `bm`, atau `om`; memfilter berdasarkan *role* user pembuat visit). Daftar user untuk pilihan filter dapat diambil dari `GET /users/?role=sales`, yang tetap mengikuti cakupan *role* pemanggil.
+## Konvensi API
 
-| Endpoint | Isi |
-|---|---|
-| `GET /reports/summary` | Total visit, total customer unik, jumlah user aktif, serta jumlah visit yang sudah dan belum diposting ke ASIS |
-| `GET /reports/visit-trend` | Jumlah visit dan customer unik per periode. Parameter tambahan `interval`: `day` (bawaan), `week`, atau `month`. Periode tanpa visit tetap ditampilkan dengan nilai 0 |
-| `GET /reports/category` | Jumlah visit per kategori beserta persentasenya |
-| `GET /reports/source` | Jumlah visit per sumber beserta persentasenya |
-| `GET /reports/sales-performance` | Jumlah visit, customer unik, visit terposting, dan visit terakhir per user, diurutkan dari visit terbanyak. Sales aktif tanpa visit tetap ditampilkan |
-| `GET /reports/sales-performance/{user_id}` | Performa satu user (objek tunggal dengan isi yang sama seperti satu baris di atas), mengikuti `date_from` dan `date_to`. User yang tidak ada atau berada di luar cakupan *role* pemanggil menghasilkan 404, sedangkan user yang terlihat tetapi tanpa visit menghasilkan baris bernilai 0 |
+Semua respons memakai satu bentuk, sukses maupun galat:
 
-Saat sync customer, customer yang sudah diposting tetapi tidak ditemukan lagi di ASIS (dicocokkan lewat ID partner ASIS) dikembalikan menjadi *belum posted* (`pending`): `asis_partner_id` dan `posted_at` dikosongkan, dan visit milik customer tersebut ikut menjadi belum posted. Customer tersebut dapat diposting kembali, atau ditautkan lagi secara otomatis apabila muncul kembali di ASIS dengan nama dan telepon yang sama. Pengembalian dilakukan di akhir sync tiap branch, hanya apabila sync branch tersebut selesai tanpa galat, dan dilewati dengan peringatan (`warnings` pada `GET /customers/sync/status`) apabila ASIS mengembalikan 0 customer atau lebih dari 50% customer sebuah branch (minimal 10 customer) tidak ditemukan. Jumlahnya dilaporkan pada kolom `missing` di status sync.
+```json
+{ "success": true, "message": "Data retrieved successfully", "data": [] }
+```
 
-Penghapusan customer bersifat *soft delete* (kolom `deleted_at`) dan hanya dapat dilakukan oleh OM:
+- Total data pada daftar ada di header `X-Total-Count`.
+- Penghapusan mengembalikan 200 dengan `data: null`.
+- Router baru harus memakai `ApiRouter` (`app/core/response/envelope.py`), bukan `APIRouter`.
+- `POST /auth/login` mengembalikan `access_token` (header `Authorization: Bearer <token>`) dan `refresh_token` (hanya untuk `POST /auth/refresh`).
 
-| Endpoint | Aturan |
-|---|---|
-| `DELETE /customers/{id}` | Hanya OM. Berlaku untuk semua status customer (pending maupun posted). Customer disembunyikan dari seluruh daftar, pencarian, dan pilihan customer pada visit, tetapi visit miliknya tidak berubah. Customer baru dengan nama dan telepon yang sama dapat dibuat kembali. Respons 204 |
-| `GET /customers/deleted` | Hanya OM. Daftar customer yang dihapus (terbaru lebih dulu), dengan `q`, `branch_id`, `skip`, `limit`, dan header `X-Total-Count`, sesuai cakupan company OM |
-| `POST /customers/{id}/restore` | Hanya OM. Mengembalikan customer yang dihapus. Ditolak 409 apabila sudah ada customer aktif dengan nama dan telepon yang sama di branch tersebut |
+Endpoint publik, contoh:
 
-Customer yang sudah dihapus lebih dari 90 hari dihapus permanen secara otomatis (`CUSTOMER_TRASH_RETENTION_DAYS`, bawaan 90). Pemeriksaan berjalan saat aplikasi dinyalakan lalu setiap 24 jam. Visit milik customer yang dihapus permanen tidak ikut terhapus; kolom `customer_id`-nya dikosongkan dan nama serta telepon pada visit tetap tersimpan. Sync tidak menghidupkan kembali customer yang berada di tempat sampah: customer ASIS dengan ID yang sama dilewati (dihitung pada `skipped`).
+```bash
+curl -H "X-Api-Key: <kunci>" "http://127.0.0.1:8000/public/customer-visits/count?date_from=2026-10-01&date_to=2026-10-31"
+```
 
-## 5. Installation
+## Catatan Perilaku
 
-Prasyarat: **Python 3.10+** dan **PostgreSQL** yang sudah berjalan.
-
-1. Lakukan *clone* repositori, kemudian masuk ke direktorinya.
-
-   ```bash
-   git clone <url-repo>
-   cd BE_CORA
-   ```
-
-2. Buat dan aktifkan *virtual environment*.
-
-   ```bash
-   python -m venv .venv
-   .venv\Scripts\activate        # Windows
-   # source .venv/bin/activate   # Linux / macOS
-   ```
-
-3. Pasang seluruh dependensi.
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. Buat basis data kosong di PostgreSQL, kemudian siapkan berkas `.env` (lihat bagian **Environment Variable**).
-
-   ```bash
-   cp .env.example .env
-   ```
-
-5. Jalankan migrasi untuk membuat tabel.
-
-   ```bash
-   alembic upgrade head
-   ```
-
-6. Isi data awal (*source* dan tiga akun contoh). Data *category*, *company*, dan *branch* diambil dari ASIS melalui fitur Sync ASIS oleh Operasional Manager.
-
-   ```bash
-   python -m app.seeders.seed
-   ```
-
-7. Setelah *company*, *branch*, dan *category* tersinkron, Operasional Manager dapat menarik Master Customer dari ASIS dengan `POST /customers/sync` (opsional dengan body `{"branch_id": "<id branch>"}` untuk satu cabang). Proses berjalan di *background* karena jumlah customer di ASIS besar (puluhan ribu); pantau lewat `GET /customers/sync/status`.
+- **Customer terhapus** memakai *soft delete* (hanya OM/Superadmin) dan dihapus permanen otomatis setelah masa simpan.
+- **Sync customer**: customer yang sudah diposting tetapi hilang di ASIS dikembalikan menjadi `pending`. Hal ini dilewati dengan peringatan jika ASIS mengembalikan 0 customer atau lebih dari 50% customer branch hilang.
+- **Sync ASIS** dibatasi per company untuk OM. Superadmin menyinkronkan semuanya.
