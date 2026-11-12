@@ -42,7 +42,7 @@ alembic upgrade head
 python -m app.seeders.seed    # data awal dan akun contoh
 ```
 
-Seeder menghapus semua user yang ada. Jangan dijalankan di database yang sudah berisi data.
+Seeder aman dijalankan berulang: hanya menambahkan source dan akun contoh yang belum ada, tanpa mengubah atau menghapus data lain.
 
 Setelah itu, Superadmin atau OM menjalankan Sync ASIS untuk mengisi company, branch, dan category. Master Customer ditarik lewat `POST /customers/sync` (berjalan di background, status di `GET /customers/sync/status`).
 

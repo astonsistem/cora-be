@@ -1,15 +1,10 @@
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database.database import SessionLocal
+from app.core.security.security import PasswordHasher, password_hasher
 from app.models import Sources, Users
 from app.models.users import UserRole
-from app.core.security.security import password_hasher
-
-db = SessionLocal()
-
-db.query(Users).delete()
 
 SOURCES = [
     {"name": "Website"},
@@ -25,43 +20,49 @@ USERS = [
     {"username": "sales", "first_name": "Sales", "last_name": "Satu", "user_role": UserRole.sales, "password": "123456"},
 ]
 
-def get_or_create(db: Session, model, lookup: dict, defaults: dict | None = None):
-    obj = db.scalar(select(model).filter_by(**lookup))
-    if obj:
-        return obj, False
-    obj = model(**lookup, **(defaults or {}))
-    db.add(obj)
-    db.flush()
-    return obj, True
 
-def seed_simple(db: Session, model, rows: list[dict]) -> int:
-    created = 0
-    for row in rows:
-        row = dict(row)
-        _, is_new = get_or_create(db, model, {"name": row.pop("name")}, row)
-        created += is_new
-    return created
+class Seeder:
+    def __init__(self, db: Session, hasher: PasswordHasher = password_hasher):
+        self.db = db
+        self.hasher = hasher
 
-def seed_users(db: Session) -> int:
-    created = 0
-    for row in USERS:
-        row = dict(row)
-        _, is_new = get_or_create(
-            db,
-            Users,
-            {"username": row.pop("username")},
-            {**row, "password": password_hasher.hash(row["password"])},
-        )
-        created += is_new
-    return created
+    def run(self) -> dict[str, int]:
+        result = {
+            "sources": self.seed_sources(SOURCES),
+            "users": self.seed_users(USERS),
+        }
+        self.db.commit()
+        return result
+
+    def seed_sources(self, rows: list[dict]) -> int:
+        return sum(self._get_or_create(Sources, {"name": row["name"]}) for row in rows)
+
+    def seed_users(self, rows: list[dict]) -> int:
+        created = 0
+        for row in rows:
+            defaults = {
+                "first_name": row["first_name"],
+                "last_name": row["last_name"],
+                "user_role": row["user_role"],
+                "password": self.hasher.hash(row["password"]),
+            }
+            created += self._get_or_create(Users, {"username": row["username"]}, defaults)
+        return created
+
+    def _get_or_create(self, model, lookup: dict, defaults: dict | None = None) -> bool:
+        if self.db.scalar(select(model).filter_by(**lookup)):
+            return False
+        self.db.add(model(**lookup, **(defaults or {})))
+        self.db.flush()
+        return True
+
 
 def main() -> None:
     with SessionLocal() as db:
-        n_src = seed_simple(db, Sources, SOURCES)
-        n_users = seed_users(db)
-        db.commit()
+        result = Seeder(db).run()
 
-    print(f"Sources baru: {n_src}, Users baru: {n_users}")
+    print(f"Sources baru: {result['sources']}, Users baru: {result['users']}")
+
 
 if __name__ == "__main__":
-    main() 
+    main()
