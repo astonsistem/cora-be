@@ -3,8 +3,9 @@ from sqlalchemy import func, Column, String, DateTime
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.core.database.database import Base
+from app.core.soft_delete import SoftDeleteMixin
 
-class Sources(Base):
+class Sources(SoftDeleteMixin, Base):
     __tablename__ = "sources"
 
     source_id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)

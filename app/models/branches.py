@@ -3,8 +3,9 @@ from sqlalchemy import func, Column, String, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.core.database.database import Base
+from app.core.soft_delete import SoftDeleteMixin
 
-class Branches(Base):
+class Branches(SoftDeleteMixin, Base):
     __tablename__ = "branches"
 
     branch_id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)

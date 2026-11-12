@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import Depends, status
+from fastapi import Depends, Response, status
 
 from app.core.response.envelope import ApiRouter
 from app.dependencies import get_company_service
@@ -13,6 +13,17 @@ router = ApiRouter(prefix="/companies", tags=["Company"])
 @router.get("/", response_model=list[CompanyResponse], dependencies=[Depends(admin_only)])
 def list_items(skip: int = 0, limit: int = 100, service: CompanyService = Depends(get_company_service)):
     return service.get_all(skip=skip, limit=limit)
+
+@router.get("/deleted", response_model=list[CompanyResponse], dependencies=[Depends(admin_only)])
+def list_deleted_items(
+    q: str | None = None,
+    skip: int = 0,
+    limit: int = 50,
+    response: Response = None,
+    service: CompanyService = Depends(get_company_service),
+):
+    response.headers["X-Total-Count"] = str(service.count_deleted(q=q))
+    return service.get_deleted(skip=skip, limit=limit, q=q)
 
 @router.get("/{company_id}", response_model=CompanyResponse, dependencies=[Depends(admin_only)])
 def get_item(company_id: uuid.UUID, service: CompanyService = Depends(get_company_service)):
@@ -29,3 +40,7 @@ def update_item(company_id: uuid.UUID, data: CompanyUpdate, service: CompanyServ
 @router.delete("/{company_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(superadmin_only)])
 def delete_item(company_id: uuid.UUID, service: CompanyService = Depends(get_company_service)):
     service.delete(service.get_or_404(company_id))
+
+@router.post("/{company_id}/restore", response_model=CompanyResponse, dependencies=[Depends(superadmin_only)])
+def restore_item(company_id: uuid.UUID, service: CompanyService = Depends(get_company_service)):
+    return service.restore(service.get_deleted_or_404(company_id))
