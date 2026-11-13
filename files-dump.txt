@@ -1,0 +1,334 @@
+﻿
+===== app\models\category.py =====
+
+import uuid
+from sqlalchemy import func, Column, String, DateTime
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+from app.core.database.database import Base
+
+class Category(Base):
+    __tablename__ = "category"
+
+    category_id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    asis_category_id = Column(String, nullable=True, unique=True)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+===== app\models\sources.py =====
+
+import uuid
+from sqlalchemy import func, Column, String, DateTime
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+from app.core.database.database import Base
+
+class Sources(Base):
+    __tablename__ = "sources"
+
+    source_id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+===== app\models\companies.py =====
+
+import uuid
+from sqlalchemy import func, Column, String, DateTime
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+from app.core.database.database import Base
+
+class Companies(Base):
+    __tablename__ = "companies"
+
+    company_id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    asis_company_id = Column(String, nullable=False)
+    company_code = Column(String, nullable=False)
+    company_name = Column(String, nullable=False)
+    company_address = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    last_synced_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    branches = relationship("Branches", back_populates="company")
+
+===== app\models\branches.py =====
+
+import uuid
+from sqlalchemy import func, Column, String, DateTime, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+from app.core.database.database import Base
+
+class Branches(Base):
+    __tablename__ = "branches"
+
+    branch_id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    asis_branch_id = Column(String, nullable=False)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.company_id"))
+    branch_code = Column(String, nullable=False)
+    branch_name = Column(String, nullable=False)
+    branch_address = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    last_synced_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    company = relationship("Companies", back_populates="branches")
+    users = relationship("Users", back_populates="branch")
+
+===== app\services\base_service.py =====
+
+from contextlib import contextmanager
+from typing import Generic, TypeVar
+
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.exceptions import BadRequestError, ConflictError, DomainError, NotFoundError
+
+M = TypeVar("M")
+
+
+class CrudService(Generic[M]):
+    model: type[M]
+    label = "Data"
+    invalid_reference_message = "Invalid data or reference"
+    in_use_message = "{label} is still referenced by other data"
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_all(self, skip: int = 0, limit: int = 100) -> list[M]:
+        return list(self.db.scalars(select(self.model).offset(skip).limit(limit)))
+
+    def get_by_id(self, obj_id) -> M | None:
+        return self.db.get(self.model, obj_id)
+
+    def get_or_404(self, obj_id) -> M:
+        obj = self.get_by_id(obj_id)
+        if obj is None:
+            raise NotFoundError(f"{self.label} not found")
+        return obj
+
+    def create(self, data) -> M:
+        with self._transaction(BadRequestError(self.invalid_reference_message)):
+            obj = self._build(data)
+            self.db.add(obj)
+            self.db.commit()
+        self.db.refresh(obj)
+        return obj
+
+    def update(self, obj: M, data) -> M:
+        with self._transaction(BadRequestError(self.invalid_reference_message)):
+            values = self._prepare_update(obj, data.model_dump(exclude_unset=True))
+            for key, value in values.items():
+                setattr(obj, key, value)
+            self.db.commit()
+        self.db.refresh(obj)
+        return obj
+
+    def delete(self, obj: M) -> None:
+        with self._transaction(ConflictError(self.in_use_message.format(label=self.label))):
+            self.db.delete(obj)
+            self.db.commit()
+
+    def _build(self, data) -> M:
+        return self.model(**data.model_dump())
+
+    def _prepare_update(self, obj: M, values: dict) -> dict:
+        return values
+
+    @contextmanager
+    def _transaction(self, on_integrity_error: DomainError | None = None):
+        try:
+            yield
+        except IntegrityError:
+            self.db.rollback()
+            if on_integrity_error is None:
+                raise
+            raise on_integrity_error from None
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def _commit(self) -> None:
+        with self._transaction():
+            self.db.commit()
+
+===== app\services\category_service.py =====
+
+from app.models.category import Category
+from app.services.base_service import CrudService
+
+class CategoryService(CrudService[Category]):
+    model = Category
+    label = "Category"
+
+===== app\services\source_service.py =====
+
+from app.models.sources import Sources
+from app.services.base_service import CrudService
+
+class SourceService(CrudService[Sources]):
+    model = Sources
+    label = "Source"
+
+===== app\services\company_service.py =====
+
+from app.models.companies import Companies
+from app.services.base_service import CrudService
+
+class CompanyService(CrudService[Companies]):
+    model = Companies
+    label = "Company"
+
+===== app\routes\category_route.py =====
+
+import uuid
+
+from fastapi import Depends, status
+
+from app.core.response.envelope import ApiRouter
+from app.dependencies import get_category_service
+from app.middleware.auth_middleware import admin_only, get_current_user
+from app.schemas.category_schema import CategoryCreate, CategoryResponse, CategoryUpdate
+from app.services.category_service import CategoryService
+
+router = ApiRouter(prefix="/categories", tags=["Category"])
+
+@router.get("/", response_model=list[CategoryResponse])
+def list_items(skip: int = 0, limit: int = 100, service: CategoryService = Depends(get_category_service)):
+    return service.get_all(skip=skip, limit=limit)
+
+@router.get("/{category_id}", response_model=CategoryResponse)
+def get_item(category_id: uuid.UUID, service: CategoryService = Depends(get_category_service)):
+    return service.get_or_404(category_id)
+
+@router.post("/", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
+def create_item(data: CategoryCreate, service: CategoryService = Depends(get_category_service)):
+    return service.create(data)
+
+@router.patch("/{category_id}", response_model=CategoryResponse)
+def update_item(category_id: uuid.UUID, data: CategoryUpdate, service: CategoryService = Depends(get_category_service)):
+    return service.update(service.get_or_404(category_id), data)
+
+@router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_item(category_id: uuid.UUID, service: CategoryService = Depends(get_category_service)):
+    service.delete(service.get_or_404(category_id))
+
+===== app\routes\source_route.py =====
+
+import uuid
+
+from fastapi import Depends, status
+
+from app.core.response.envelope import ApiRouter
+from app.dependencies import get_source_service
+from app.middleware.auth_middleware import admin_only
+from app.schemas.source_schema import SourceCreate, SourceResponse, SourceUpdate
+from app.services.source_service import SourceService
+
+router = ApiRouter(prefix="/sources", tags=["Source"])
+
+@router.get("/", response_model=list[SourceResponse])
+def list_items(skip: int = 0, limit: int = 100, service: SourceService = Depends(get_source_service)):
+    return service.get_all(skip=skip, limit=limit)
+
+@router.get("/{source_id}", response_model=SourceResponse)
+def get_item(source_id: uuid.UUID, service: SourceService = Depends(get_source_service)):
+    return service.get_or_404(source_id)
+
+@router.post("/", response_model=SourceResponse, status_code=status.HTTP_201_CREATED)
+def create_item(data: SourceCreate, service: SourceService = Depends(get_source_service)):
+    return service.create(data)
+
+@router.patch("/{source_id}", response_model=SourceResponse)
+def update_item(source_id: uuid.UUID, data: SourceUpdate, service: SourceService = Depends(get_source_service)):
+    return service.update(service.get_or_404(source_id), data)
+
+@router.delete("/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_item(source_id: uuid.UUID, service: SourceService = Depends(get_source_service)):
+    service.delete(service.get_or_404(source_id))
+
+===== app\routes\company_route.py =====
+
+import uuid
+
+from fastapi import Depends, status
+
+from app.core.response.envelope import ApiRouter
+from app.dependencies import get_company_service
+from app.middleware.auth_middleware import admin_only, get_current_user
+from app.schemas.company_schema import CompanyCreate, CompanyResponse, CompanyUpdate
+from app.services.company_service import CompanyService
+
+router = ApiRouter(prefix="/companies", tags=["Company"], dependencies=[Depends(admin_only)])
+
+@router.get("/", response_model=list[CompanyResponse])
+def list_items(skip: int = 0, limit: int = 100, service: CompanyService = Depends(get_company_service)):
+    return service.get_all(skip=skip, limit=limit)
+
+@router.get("/{company_id}", response_model=CompanyResponse)
+def get_item(company_id: uuid.UUID, service: CompanyService = Depends(get_company_service)):
+    return service.get_or_404(company_id)
+
+@router.post("/", response_model=CompanyResponse, status_code=status.HTTP_201_CREATED)
+def create_item(data: CompanyCreate, service: CompanyService = Depends(get_company_service)):
+    return service.create(data)
+
+@router.patch("/{company_id}", response_model=CompanyResponse)
+def update_item(company_id: uuid.UUID, data: CompanyUpdate, service: CompanyService = Depends(get_company_service)):
+    return service.update(service.get_or_404(company_id), data)
+
+@router.delete("/{company_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_item(company_id: uuid.UUID, service: CompanyService = Depends(get_company_service)):
+    service.delete(service.get_or_404(company_id))
+
+===== app\routes\branch_route.py =====
+
+import uuid
+
+from fastapi import Depends, status
+
+from app.core.response.envelope import ApiRouter
+from app.dependencies import get_branch_service
+from app.middleware.auth_middleware import admin_only, get_current_user
+from app.models.users import Users
+from app.schemas.branch_schema import BranchCreate, BranchResponse, BranchUpdate
+from app.services.branch_service import BranchService
+
+router = ApiRouter(prefix="/branches", tags=["Branch"])
+
+@router.get("/", response_model=list[BranchResponse])
+def list_items(
+    skip: int = 0,
+    limit: int = 100,
+    service: BranchService = Depends(get_branch_service),
+    current_user: Users = Depends(get_current_user),
+):
+    return service.get_all_for(current_user, skip=skip, limit=limit)
+
+@router.get("/{branch_id}", response_model=BranchResponse)
+def get_item(
+    branch_id: uuid.UUID,
+    service: BranchService = Depends(get_branch_service),
+    current_user: Users = Depends(get_current_user),
+):
+    return service.get_for_or_404(current_user, branch_id)
+
+@router.post("/", response_model=BranchResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(admin_only)])
+def create_item(data: BranchCreate, service: BranchService = Depends(get_branch_service)):
+    return service.create(data)
+
+@router.patch("/{branch_id}", response_model=BranchResponse, dependencies=[Depends(admin_only)])
+def update_item(branch_id: uuid.UUID, data: BranchUpdate, service: BranchService = Depends(get_branch_service)):
+    return service.update(service.get_or_404(branch_id), data)
+
+@router.delete("/{branch_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(admin_only)])
+def delete_item(branch_id: uuid.UUID, service: BranchService = Depends(get_branch_service)):
+    service.delete(service.get_or_404(branch_id))

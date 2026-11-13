@@ -88,7 +88,7 @@ def delete_user_photo(
     _require_self_or_om(current_user, user_id)
     service.delete_photo(service.get_or_404(user_id))
 
-@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(superadmin_only)])
+@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(admin_only)])
 def create_user(data: UserCreate, service: UserService = Depends(get_user_service)):
     return service.create(data)
 
