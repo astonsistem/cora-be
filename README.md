@@ -18,8 +18,8 @@ Dokumentasi seluruh endpoint ada di Swagger (`/docs`) saat server berjalan.
 |---|---|---|
 | `sales` | Visit miliknya sendiri | |
 | `branch_manager` | Visit sales di branch-nya | Mengelola voucher branch-nya |
-| `operasional_manager` | Company miliknya | Sync ASIS hanya untuk company-nya. Tidak bisa mengubah company |
-| `superadmin` | Semua company dan branch | Tidak terikat company/branch. Satu-satunya yang bisa membuat user, serta menambah/mengubah/menghapus company |
+| `operasional_manager` | Company miliknya | Mengelola user di company-nya saja. Sync ASIS hanya untuk company-nya. Tidak bisa mengubah company |
+| `superadmin` | Semua company dan branch | Tidak terikat company/branch. Satu-satunya yang bisa membuat akun superadmin dan menambah/mengubah/menghapus company |
 
 Superadmin memilih company dan branch sendiri saat membuat customer visit.
 

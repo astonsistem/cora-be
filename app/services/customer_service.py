@@ -10,6 +10,7 @@ from app.models.customers import Customers, normalize_name, normalize_phone, pho
 from app.models.users import Users
 from app.schemas.customer_schema import CustomerCreate
 from app.services.base_service import CrudService
+from app.services.company_scope import CompanyScope
 
 class DuplicateCustomerError(ConflictError):
     def __init__(self, customer: Customers):
@@ -33,10 +34,11 @@ class CustomerService(CrudService[Customers]):
 
     def _scope(self, query):
         if self.user.is_admin:
-            if self.user.is_superadmin or self.user.company_id is None:
+            scope = CompanyScope(self.user)
+            if not scope.restricted:
                 return query
             return query.join(Branches, Customers.branch_id == Branches.branch_id).where(
-                Branches.company_id == self.user.company_id
+                Branches.company_id == scope.company_id
             )
         if self.user.branch_id is None:
             return query.where(false())
@@ -89,7 +91,10 @@ class CustomerService(CrudService[Customers]):
         deleted: bool = False,
     ) -> list[Customers]:
         query = self._filtered(q, status, branch_id, deleted)
-        order = (Customers.deleted_at.desc(), Customers.name_search) if deleted else (Customers.name_search,)
+        if deleted:
+            order = (Customers.deleted_at.desc(), Customers.name_search, Customers.customer_id)
+        else:
+            order = (Customers.asis_partner_id.is_(None).desc(), Customers.name_search, Customers.customer_id)
         query = query.order_by(*order).offset(skip).limit(min(max(limit, 1), 200))
         return list(self.db.scalars(query))
 
@@ -130,8 +135,7 @@ class CustomerService(CrudService[Customers]):
             branch = self.db.get(Branches, branch_id)
             if branch is None:
                 raise BadRequestError("Branch tidak ditemukan")
-            if not self.user.is_superadmin and self.user.company_id is not None and branch.company_id != self.user.company_id:
-                raise ForbiddenError("Branch tersebut bukan milik company Anda")
+            CompanyScope(self.user).ensure_branch(branch)
             return branch
 
         if self.user.branch_id is None:

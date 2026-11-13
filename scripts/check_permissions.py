@@ -26,7 +26,7 @@ EXPECTED = [
     # Master data: semua role boleh membaca (scope data tetap berlaku), hanya OM yang mengubah
     ("GET", "/users/", ALL),
     ("GET", "/users/{id}", OM),
-    ("POST", "/users/", SUPER),
+    ("POST", "/users/", OM),
     ("PATCH", "/users/{id}", OM),
     ("DELETE", "/users/{id}", OM),
 
