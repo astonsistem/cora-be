@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import Depends, status
+from fastapi import Depends, Response, status
 
 from app.core.response.envelope import ApiRouter
 from app.dependencies import get_branch_service
@@ -19,6 +19,17 @@ def list_items(
     current_user: Users = Depends(get_current_user),
 ):
     return service.get_all_for(current_user, skip=skip, limit=limit)
+
+@router.get("/deleted", response_model=list[BranchResponse], dependencies=[Depends(admin_only)])
+def list_deleted_items(
+    q: str | None = None,
+    skip: int = 0,
+    limit: int = 50,
+    response: Response = None,
+    service: BranchService = Depends(get_branch_service),
+):
+    response.headers["X-Total-Count"] = str(service.count_deleted(q=q))
+    return service.get_deleted(skip=skip, limit=limit, q=q)
 
 @router.get("/{branch_id}", response_model=BranchResponse)
 def get_item(
@@ -39,3 +50,7 @@ def update_item(branch_id: uuid.UUID, data: BranchUpdate, service: BranchService
 @router.delete("/{branch_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(admin_only)])
 def delete_item(branch_id: uuid.UUID, service: BranchService = Depends(get_branch_service)):
     service.delete(service.get_or_404(branch_id))
+
+@router.post("/{branch_id}/restore", response_model=BranchResponse, dependencies=[Depends(admin_only)])
+def restore_item(branch_id: uuid.UUID, service: BranchService = Depends(get_branch_service)):
+    return service.restore(service.get_deleted_or_404(branch_id))

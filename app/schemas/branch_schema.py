@@ -28,3 +28,4 @@ class BranchResponse(BranchBase):
     last_synced_at: datetime
     created_at: datetime
     updated_at: datetime
+    deleted_at: datetime | None = None

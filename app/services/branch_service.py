@@ -1,13 +1,15 @@
 from sqlalchemy import select
 
+from app.core.soft_delete import SoftDeleteServiceMixin
 from app.exceptions import NotFoundError
 from app.models.branches import Branches
 from app.models.users import Users
 from app.services.base_service import CrudService
 
-class BranchService(CrudService[Branches]):
+class BranchService(SoftDeleteServiceMixin, CrudService[Branches]):
     model = Branches
     label = "Branch"
+    search_column = "branch_name"
 
     def get_all_for(self, current_user: Users, skip: int = 0, limit: int = 100) -> list[Branches]:
         if current_user.is_admin:
@@ -23,9 +25,9 @@ class BranchService(CrudService[Branches]):
         if not branch_ids:
             return []
 
-        query = select(Branches).where(Branches.branch_id.in_(branch_ids))
+        query = self._active().where(Branches.branch_id.in_(branch_ids))
         return list(self.db.scalars(query))
 
     def get_all_by_company(self, company_id) -> list[Branches]:
-        query = select(Branches).where(Branches.company_id == company_id)
+        query = self._active().where(Branches.company_id == company_id)
         return list(self.db.scalars(query))

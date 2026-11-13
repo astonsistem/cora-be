@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import Depends, status
+from fastapi import Depends, Response, status
 
 from app.core.response.envelope import ApiRouter
 from app.dependencies import get_category_service
@@ -13,6 +13,17 @@ router = ApiRouter(prefix="/categories", tags=["Category"], dependencies=[Depend
 @router.get("/", response_model=list[CategoryResponse])
 def list_items(skip: int = 0, limit: int = 100, service: CategoryService = Depends(get_category_service)):
     return service.get_all(skip=skip, limit=limit)
+
+@router.get("/deleted", response_model=list[CategoryResponse], dependencies=[Depends(admin_only)])
+def list_deleted_items(
+    q: str | None = None,
+    skip: int = 0,
+    limit: int = 50,
+    response: Response = None,
+    service: CategoryService = Depends(get_category_service),
+):
+    response.headers["X-Total-Count"] = str(service.count_deleted(q=q))
+    return service.get_deleted(skip=skip, limit=limit, q=q)
 
 @router.get("/{category_id}", response_model=CategoryResponse)
 def get_item(category_id: uuid.UUID, service: CategoryService = Depends(get_category_service)):
@@ -29,3 +40,7 @@ def update_item(category_id: uuid.UUID, data: CategoryUpdate, service: CategoryS
 @router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(admin_only)])
 def delete_item(category_id: uuid.UUID, service: CategoryService = Depends(get_category_service)):
     service.delete(service.get_or_404(category_id))
+
+@router.post("/{category_id}/restore", response_model=CategoryResponse, dependencies=[Depends(admin_only)])
+def restore_item(category_id: uuid.UUID, service: CategoryService = Depends(get_category_service)):
+    return service.restore(service.get_deleted_or_404(category_id))
