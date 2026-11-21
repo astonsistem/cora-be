@@ -88,9 +88,9 @@ EXPECTED = [
 
     ("GET", "/vouchers/", MANAGER),
     ("GET", "/vouchers/archived", MANAGER),
-    ("POST", "/vouchers/", OM_ONLY),
-    ("PATCH", "/vouchers/{id}", OM_ONLY),
-    ("DELETE", "/vouchers/{id}", OM_ONLY),
+    ("POST", "/vouchers/", OM),
+    ("PATCH", "/vouchers/{id}", OM),
+    ("DELETE", "/vouchers/{id}", OM),
 
     ("GET", "/voucher-qrs/", OM),
     ("POST", "/voucher-qrs/", OM),
