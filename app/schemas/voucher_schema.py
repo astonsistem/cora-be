@@ -28,6 +28,10 @@ class VoucherCreate(VoucherBase):
     code: str | None = Field(default=None, min_length=3, max_length=40)
 
 
+class VoucherDesignUpdate(BaseModel):
+    design: dict | None = None
+
+
 class VoucherUpdate(BaseModel):
     voucher_name: str | None = Field(default=None, min_length=1, max_length=150)
     description: str | None = None

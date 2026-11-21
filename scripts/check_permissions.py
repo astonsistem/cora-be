@@ -93,13 +93,14 @@ EXPECTED = [
     ("DELETE", "/vouchers/{id}", OM_ONLY),
 
     ("GET", "/voucher-qrs/", OM),
-    ("POST", "/voucher-qrs/", OM_ONLY),
-    ("PATCH", "/voucher-qrs/{id}", OM_ONLY),
-    ("POST", "/voucher-qrs/{id}/regenerate-code", OM_ONLY),
-    ("DELETE", "/voucher-qrs/{id}", OM_ONLY),
+    ("POST", "/voucher-qrs/", OM),
+    ("PATCH", "/voucher-qrs/{id}", OM),
+    ("POST", "/voucher-qrs/{id}/regenerate-code", OM),
+    ("DELETE", "/voucher-qrs/{id}", OM),
+    ("PATCH", "/vouchers/{id}/design", OM),
 
     ("GET", "/visit-questions/", OM),
-    ("PUT", "/visit-questions/", OM_ONLY),
+    ("PUT", "/visit-questions/", OM),
 
     ("GET", "/voucher-claims/", ALL),
     ("POST", "/voucher-claims/", ALL),
