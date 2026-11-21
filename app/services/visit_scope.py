@@ -1,7 +1,8 @@
-from sqlalchemy import and_, or_, true
+from sqlalchemy import and_, false, or_, select, true
 
 from app.models.customer_visits import CustomerVisits
 from app.models.users import UserRole, Users
+from app.models.voucher_qr import VoucherQrs
 
 class VisitScope:
     def __init__(self, user: Users):
@@ -23,5 +24,15 @@ class VisitScope:
             return own
         return or_(own, and_(Users.user_role.in_(visible_roles), in_scope))
 
+    def qr_condition(self):
+        if self.user.is_superadmin:
+            return true()
+        if self.user.user_role == UserRole.sales or self.user.company_id is None:
+            return false()
+        company_qrs = select(VoucherQrs.qr_id).where(VoucherQrs.company_id == self.user.company_id)
+        return CustomerVisits.qr_id.in_(company_qrs)
+
     def apply(self, query):
-        return query.join(Users, CustomerVisits.user_id == Users.user_id).where(self.user_condition())
+        return query.outerjoin(Users, CustomerVisits.user_id == Users.user_id).where(
+            or_(self.user_condition(), self.qr_condition())
+        )

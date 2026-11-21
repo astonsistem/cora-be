@@ -11,8 +11,10 @@ from app.core.log.logging_config import AppLogging
 from app.middleware.CORS_middleware import register_cors
 from app.middleware.error_handler import register_exception_handlers
 from app.services.customer_purge_service import CustomerPurgeScheduler, CustomerPurgeService
+from app.services.voucher_archive_service import VoucherArchiveScheduler, VoucherArchiveService
 
 from app.routes import (
+    asis_credential_route,
     asis_route,
     auth_route,
     branch_route,
@@ -24,7 +26,10 @@ from app.routes import (
     report_route,
     source_route,
     user_route,
+    visit_question_route,
+    voucher_claim_route,
     voucher_public_route,
+    voucher_qr_route,
     voucher_route,
 )
 
@@ -32,13 +37,18 @@ AppLogging.configure()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    purge_task = asyncio.create_task(CustomerPurgeScheduler(CustomerPurgeService()).run())
+    tasks = [
+        asyncio.create_task(CustomerPurgeScheduler(CustomerPurgeService()).run()),
+        asyncio.create_task(VoucherArchiveScheduler(VoucherArchiveService()).run()),
+    ]
     try:
         yield
     finally:
-        purge_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await purge_task
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with suppress(asyncio.CancelledError):
+                await task
 
 app = FastAPI(title="CORA API", lifespan=lifespan)
 
@@ -54,10 +64,14 @@ for module in (
     user_route,
     customer_route,
     customer_visit_route,
+    asis_credential_route,
     asis_route,
     public_route,
     report_route,
     voucher_route,
+    voucher_claim_route,
+    voucher_qr_route,
+    visit_question_route,
     voucher_public_route,
 ):
     app.include_router(module.router)

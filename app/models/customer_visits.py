@@ -1,6 +1,6 @@
 import uuid
 from sqlalchemy import func, Column, String, DateTime, ForeignKey, Boolean
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 from app.core.database.database import Base
 
@@ -19,6 +19,10 @@ class CustomerVisits(Base):
     is_posted_to_asis = Column(Boolean, default=False)
     posted_to_asis_at = Column(DateTime, nullable=True)
     asis_partner_id = Column(String, nullable=True)
+    qr_id = Column(UUID(as_uuid=True), ForeignKey("voucher_qrs.qr_id"), nullable=True, index=True)
+    meta = Column(JSONB, nullable=False, default=dict, server_default="{}")
+    claim_token = Column(String(64), nullable=True, unique=True)
+    claim_expires_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
@@ -26,3 +30,4 @@ class CustomerVisits(Base):
     customer = relationship("Customers")
     source = relationship("Sources")
     category = relationship("Category")
+    qr = relationship("VoucherQrs")

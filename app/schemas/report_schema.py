@@ -35,6 +35,7 @@ class ReportSummary(BaseModel):
     active_users: int
     posted_to_asis: int
     not_posted_to_asis: int
+    qr_visits: int = 0
 
 class VisitTrendPoint(BaseModel):
     period: date

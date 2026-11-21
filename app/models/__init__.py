@@ -6,4 +6,7 @@ from app.models.category import Category
 from app.models.sources import Sources
 from app.models.customers import Customers
 from app.models.customer_visits import CustomerVisits
-from app.models.voucher import Vouchers, VoucherRedemptions
+from app.models.voucher_qr import VoucherQrs
+from app.models.visit_question import VisitQuestions
+from app.models.voucher import Vouchers, VoucherCodes, VoucherClaims
+from app.models.asis_credential import AsisCredentials

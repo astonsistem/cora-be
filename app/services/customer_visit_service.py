@@ -9,6 +9,7 @@ from app.models.customer_visits import CustomerVisits
 from app.models.users import Users
 from app.schemas.customer_visit_schema import CustomerVisitCreate
 from app.services.base_service import CrudService
+from app.services.category_guard import CategoryGuard
 from app.services.customer_service import CustomerService
 from app.services.visit_period import VisitPeriod
 from app.services.visit_scope import VisitScope
@@ -83,6 +84,7 @@ class CustomerVisitService(CrudService[CustomerVisits]):
             customer = self.customers.get_by_id(data.customer_id)
             if customer is None:
                 raise BadRequestError("Customer tidak ditemukan di Master Customer")
+            CategoryGuard(self.db).ensure_in_company(data.category_id, customer.branch.company_id)
         else:
             customer = self.customers.ensure_customer(
                 data.customer_name, data.phone, data.category_id, data.branch_id

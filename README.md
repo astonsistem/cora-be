@@ -16,12 +16,16 @@ Dokumentasi seluruh endpoint ada di Swagger (`/docs`) saat server berjalan.
 
 | Role | Cakupan data | Catatan |
 |---|---|---|
-| `sales` | Visit miliknya sendiri | |
-| `branch_manager` | Visit sales di branch-nya | Mengelola voucher branch-nya |
-| `operasional_manager` | Company miliknya | Mengelola user di company-nya saja. Sync ASIS hanya untuk company-nya. Tidak bisa mengubah company |
+| `sales` | Visit miliknya sendiri | Boleh memvalidasi (approve) redeem voucher di branch-nya |
+| `branch_manager` | Visit sales di branch-nya | Melihat voucher company-nya dan memvalidasi redeem di branch-nya |
+| `operasional_manager` | Company miliknya | Satu-satunya yang membuat voucher, QR, dan pertanyaan form visit. Mengelola user di company-nya saja. Sync ASIS hanya untuk company-nya. Tidak bisa mengubah company |
 | `superadmin` | Semua company dan branch | Tidak terikat company/branch. Satu-satunya yang bisa membuat akun superadmin dan menambah/mengubah/menghapus company |
 
 Superadmin memilih company dan branch sendiri saat membuat customer visit.
+
+## Voucher dan QR
+
+Scan QR, isi form visit, lalu klaim voucher tanpa login lewat `/public/qr/{code}`. Kode voucher diredeem di outlet lewat `/public/voucher-codes/{code}` atau divalidasi staff lewat `/voucher-claims`. Voucher dan QR dibuat per company. Voucher yang kuotanya habis atau sudah kedaluwarsa lebih dari 3 bulan dipindahkan ke arsip secara otomatis setiap hari (`VOUCHER_ARCHIVE_AFTER_DAYS`, bawaan 90). Daftarnya ada di `/vouchers/archived`. Setelah `git pull`, jalankan `alembic upgrade head`.
 
 ## Tech Stack
 
@@ -68,7 +72,8 @@ Akun contoh setelah seeder (password `123456`): `superadmin`, `operasional`, `br
 | `SECRET_KEY` | Ya | Kunci penanda JWT. Jika diganti, semua token tidak berlaku |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Tidak | Bawaan `60` |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | Tidak | Bawaan `1` |
-| `ASIS_BASE_URL`, `ASIS_USERNAME`, `ASIS_PASSWORD` | Untuk fitur ASIS | Akses ke API ASIS |
+| `ASIS_BASE_URL`, `ASIS_USERNAME`, `ASIS_PASSWORD` | Untuk fitur ASIS | Akses ke API ASIS (akun bawaan, dipakai bila company belum punya akun sendiri) |
+| `ASIS_SECRET_KEY` | Untuk akun ASIS per company | Kunci enkripsi password akun ASIS. Buat dengan `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
 | `PUBLIC_API_KEY` | Untuk `/public` | Header `X-Api-Key`. Boleh beberapa kunci dipisah koma |
 | `CUSTOMER_TRASH_RETENTION_DAYS` | Tidak | Lama customer terhapus disimpan sebelum dihapus permanen. Bawaan `90` |
 | `LOG_LEVEL` | Tidak | `DEBUG`, `INFO` (bawaan), `WARNING`, `ERROR` |

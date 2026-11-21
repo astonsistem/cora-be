@@ -9,7 +9,7 @@ class CategoryBase(BaseModel):
     asis_category_id: str | None = None
 
 class CategoryCreate(CategoryBase):
-    pass
+    company_id: uuid.UUID | None = None
 
 class CategoryUpdate(BaseModel):
     name: str | None = None
@@ -20,6 +20,7 @@ class CategoryResponse(CategoryBase):
     model_config = ConfigDict(from_attributes=True)
 
     category_id: uuid.UUID
+    company_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None = None

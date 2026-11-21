@@ -15,6 +15,7 @@ S, B, O, A = "sales", "branch_manager", "operasional_manager", "superadmin"
 ALL = {S, B, O, A}
 MANAGER = {B, O, A}
 OM = {O, A}
+OM_ONLY = {O}
 SUPER = {A}
 SHORT = {S: "Sales", B: "BM", O: "OM", A: "SA"}
 
@@ -52,6 +53,7 @@ EXPECTED = [
 
     # ASIS: preview dan sync hanya OM
     ("GET", "/asis/preview", OM),
+    ("GET", "/asis/credentials/", SUPER),
 
     # Customer
     # Semua role boleh melihat customer sesuai cakupan datanya
@@ -85,7 +87,24 @@ EXPECTED = [
     ("DELETE", "/customer-visits/{id}", ALL),
 
     ("GET", "/vouchers/", MANAGER),
-    ("POST", "/vouchers/", MANAGER),
+    ("GET", "/vouchers/archived", MANAGER),
+    ("POST", "/vouchers/", OM_ONLY),
+    ("PATCH", "/vouchers/{id}", OM_ONLY),
+    ("DELETE", "/vouchers/{id}", OM_ONLY),
+
+    ("GET", "/voucher-qrs/", OM),
+    ("POST", "/voucher-qrs/", OM_ONLY),
+    ("PATCH", "/voucher-qrs/{id}", OM_ONLY),
+    ("POST", "/voucher-qrs/{id}/regenerate-code", OM_ONLY),
+    ("DELETE", "/voucher-qrs/{id}", OM_ONLY),
+
+    ("GET", "/visit-questions/", OM),
+    ("PUT", "/visit-questions/", OM_ONLY),
+
+    ("GET", "/voucher-claims/", ALL),
+    ("POST", "/voucher-claims/", ALL),
+    ("PATCH", "/voucher-claims/{id}/approve", ALL),
+    ("PATCH", "/voucher-claims/{id}/clear-flag", OM),
 
     # Reports: hanya OM dan BM
     ("GET", "/reports/summary", MANAGER),
@@ -99,7 +118,7 @@ EXPECTED = [
 
 SKIPPED = ["POST /asis/sync", "POST /asis/apply", "POST /customers/sync", "foto user (PUT/DELETE /users/{id}/photo)"]
 
-EMPTY_BODY = {"POST": {}, "PATCH": {}}
+EMPTY_BODY = {"POST": {}, "PATCH": {}, "PUT": {}}
 LISTS = [
     "/customers/",
     "/customer-visits/",

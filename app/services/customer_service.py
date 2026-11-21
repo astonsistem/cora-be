@@ -10,6 +10,7 @@ from app.models.customers import Customers, normalize_name, normalize_phone, pho
 from app.models.users import Users
 from app.schemas.customer_schema import CustomerCreate
 from app.services.base_service import CrudService
+from app.services.category_guard import CategoryGuard
 from app.services.company_scope import CompanyScope
 
 class DuplicateCustomerError(ConflictError):
@@ -146,6 +147,7 @@ class CustomerService(CrudService[Customers]):
 
     def _build(self, data: CustomerCreate) -> Customers:
         branch = self._resolve_branch(data.branch_id)
+        CategoryGuard(self.db).ensure_in_company(data.category_id, branch.company_id)
         duplicate = self.find_duplicate(branch.branch_id, data.name, data.phone)
         if duplicate:
             raise DuplicateCustomerError(duplicate)
@@ -169,6 +171,11 @@ class CustomerService(CrudService[Customers]):
             branch_id = values.pop("branch_id")
             if branch_id is not None and branch_id != customer.branch_id:
                 customer.branch_id = self._resolve_branch(branch_id).branch_id
+
+        if values.get("category_id") is not None:
+            CategoryGuard(self.db).ensure_in_company(
+                values["category_id"], self.db.get(Branches, customer.branch_id).company_id
+            )
 
         new_name = values.get("name", customer.name)
         new_phone = values["phone"] if "phone" in values else customer.phone
@@ -208,6 +215,7 @@ class CustomerService(CrudService[Customers]):
             raise BadRequestError("Nama customer wajib diisi")
 
         branch = self._resolve_branch(branch_id)
+        CategoryGuard(self.db).ensure_in_company(category_id, branch.company_id)
         existing = self.find_duplicate(branch.branch_id, name, phone)
         if existing:
             return existing
