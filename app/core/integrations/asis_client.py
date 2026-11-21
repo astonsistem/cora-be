@@ -65,13 +65,13 @@ class AsisGateway(ABC):
     def create_partner(self, payload: dict) -> str: ...
 
 class AsisClient(AsisGateway):
-    def __init__(self):
+    def __init__(self, username: str | None = None, password: str | None = None):
         if not settings.asis_base_url:
             raise AsisError("ASIS_BASE_URL belum diisi di .env")
         self.api_url = settings.asis_base_url.rstrip("/")
         self.login_url = f"{self.api_url}{LOGIN_PATH}"
-        self.username = settings.asis_username
-        self.password = settings.asis_password
+        self.username = username if username is not None else settings.asis_username
+        self.password = password if password is not None else settings.asis_password
         self._token = None
         self._http = httpx.Client(
             transport=httpx.HTTPTransport(retries=CONNECT_RETRIES),

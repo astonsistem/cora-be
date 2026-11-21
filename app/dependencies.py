@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.database.database import get_db
 from app.middleware.auth_middleware import get_current_user
 from app.models.users import Users
+from app.services.asis_credential_service import AsisCredentialService
 from app.services.asis_sync_service import AsisSyncService
 from app.services.company_scope import CompanyScope
 from app.services.auth_service import AuthService
@@ -20,7 +21,12 @@ from app.services.report_service import ReportService
 from app.services.source_service import SourceService
 from app.services.user_service import UserService
 from app.services.visit_stats_service import VisitStatsService
-from app.services.voucher_redemption_service import VoucherRedemptionService
+from app.services.qr_visit_service import QrVisitService
+from app.services.visit_question_service import VisitQuestionService
+from app.services.voucher_claim_service import VoucherClaimService
+from app.services.voucher_issue_service import VoucherIssueService
+from app.services.voucher_qr_service import VoucherQrService
+from app.services.voucher_redeem_service import VoucherRedeemService
 from app.services.voucher_service import VoucherService
 
 def get_branch_service(db: Session = Depends(get_db)) -> BranchService:
@@ -65,8 +71,32 @@ def get_voucher_service(
 ) -> VoucherService:
     return VoucherService(db, current_user)
 
-def get_voucher_redemption_service(db: Session = Depends(get_db)) -> VoucherRedemptionService:
-    return VoucherRedemptionService(db)
+def get_voucher_qr_service(
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
+) -> VoucherQrService:
+    return VoucherQrService(db, current_user)
+
+def get_visit_question_service(
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
+) -> VisitQuestionService:
+    return VisitQuestionService(db, current_user)
+
+def get_voucher_claim_service(
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
+) -> VoucherClaimService:
+    return VoucherClaimService(db, current_user)
+
+def get_qr_visit_service(db: Session = Depends(get_db)) -> QrVisitService:
+    return QrVisitService(db)
+
+def get_voucher_issue_service(db: Session = Depends(get_db)) -> VoucherIssueService:
+    return VoucherIssueService(db)
+
+def get_voucher_redeem_service(db: Session = Depends(get_db)) -> VoucherRedeemService:
+    return VoucherRedeemService(db)
 
 def get_visit_stats_service(db: Session = Depends(get_db)) -> VisitStatsService:
     return VisitStatsService(db)
@@ -79,6 +109,9 @@ def get_asis_sync_service(
     current_user: Users = Depends(get_current_user),
 ) -> AsisSyncService:
     return AsisSyncService(db, scope=CompanyScope(current_user))
+
+def get_asis_credential_service(db: Session = Depends(get_db)) -> AsisCredentialService:
+    return AsisCredentialService(db)
 
 @lru_cache
 def get_customer_sync_service() -> CustomerSyncService:

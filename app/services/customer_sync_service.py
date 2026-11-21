@@ -5,11 +5,12 @@ from datetime import datetime
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.integrations.asis_client import AsisClient, AsisGateway, PARTNER_PAGE_SIZE
+from app.core.integrations.asis_client import AsisGateway, PARTNER_PAGE_SIZE
 from app.core.database.database import SessionLocal
 from app.models.branches import Branches
 from app.models.category import Category
 from app.models.customers import Customers, normalize_name, normalize_phone, phones_match
+from app.services.asis_gateway_provider import AsisGatewayProvider
 from app.services.customer_post_service import CustomerPostService
 
 
@@ -79,11 +80,11 @@ class CustomerSyncService:
         self,
         state: SyncState,
         session_factory: sessionmaker = SessionLocal,
-        gateway_factory=AsisClient,
+        provider_factory=AsisGatewayProvider,
     ):
         self.state = state
         self._session_factory = session_factory
-        self._gateway_factory = gateway_factory
+        self._provider_factory = provider_factory
 
     MISSING_GUARD_RATIO = 0.5
     MISSING_GUARD_MIN_CUSTOMERS = 10
@@ -100,20 +101,26 @@ class CustomerSyncService:
         try:
             with self._session_factory() as db:
                 branches = self._target_branches(db, branch_id, company_id)
-                categories = {
-                    c.asis_category_id: c.category_id
-                    for c in db.scalars(select(Category).where(Category.asis_category_id.isnot(None)))
-                }
+                company_categories: dict[uuid.UUID, dict[str, uuid.UUID]] = {}
                 self.state.set(branches_total=len(branches))
 
-                gateway = self._gateway_factory()
+                provider = self._provider_factory(db)
                 for branch in branches:
-                    self._sync_branch(db, gateway, branch, categories)
+                    if branch.company_id not in company_categories:
+                        company_categories[branch.company_id] = self._categories_of(db, branch.company_id)
+                    self._sync_branch(
+                        db, provider.for_company(branch.company_id), branch, company_categories[branch.company_id]
+                    )
                     self.state.bump(branches_done=1)
         except Exception as e:
             error = f"{type(e).__name__}: {e}"
         finally:
             self.state.finish(error)
+
+    @staticmethod
+    def _categories_of(db: Session, company_id: uuid.UUID) -> dict[str, uuid.UUID]:
+        query = select(Category).where(Category.company_id == company_id, Category.asis_category_id.isnot(None))
+        return {c.asis_category_id: c.category_id for c in db.scalars(query)}
 
     @staticmethod
     def _target_branches(db: Session, branch_id: uuid.UUID | None, company_id: uuid.UUID | None) -> list[Branches]:

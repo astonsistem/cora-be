@@ -39,7 +39,9 @@ class CustomerVisitResponse(CustomerVisitBase):
     model_config = ConfigDict(from_attributes=True)
 
     visit_id: uuid.UUID
-    user_id: uuid.UUID
+    user_id: uuid.UUID | None = None
+    qr_id: uuid.UUID | None = None
+    meta: dict = {}
     customer_id: uuid.UUID | None = None
     posted_at: datetime
     is_posted_to_asis: bool

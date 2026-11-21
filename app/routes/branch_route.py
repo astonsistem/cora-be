@@ -20,16 +20,17 @@ def list_items(
 ):
     return service.get_all_for(current_user, skip=skip, limit=limit)
 
-@router.get("/deleted", response_model=list[BranchResponse], dependencies=[Depends(admin_only)])
+@router.get("/deleted", response_model=list[BranchResponse])
 def list_deleted_items(
     q: str | None = None,
     skip: int = 0,
     limit: int = 50,
     response: Response = None,
     service: BranchService = Depends(get_branch_service),
+    current_user: Users = Depends(admin_only),
 ):
-    response.headers["X-Total-Count"] = str(service.count_deleted(q=q))
-    return service.get_deleted(skip=skip, limit=limit, q=q)
+    response.headers["X-Total-Count"] = str(service.count_deleted_for(current_user, q=q))
+    return service.get_deleted_for(current_user, skip=skip, limit=limit, q=q)
 
 @router.get("/{branch_id}", response_model=BranchResponse)
 def get_item(
@@ -39,18 +40,35 @@ def get_item(
 ):
     return service.get_for_or_404(current_user, branch_id)
 
-@router.post("/", response_model=BranchResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(admin_only)])
-def create_item(data: BranchCreate, service: BranchService = Depends(get_branch_service)):
-    return service.create(data)
+@router.post("/", response_model=BranchResponse, status_code=status.HTTP_201_CREATED)
+def create_item(
+    data: BranchCreate,
+    service: BranchService = Depends(get_branch_service),
+    current_user: Users = Depends(admin_only),
+):
+    return service.create_as(current_user, data)
 
-@router.patch("/{branch_id}", response_model=BranchResponse, dependencies=[Depends(admin_only)])
-def update_item(branch_id: uuid.UUID, data: BranchUpdate, service: BranchService = Depends(get_branch_service)):
-    return service.update(service.get_or_404(branch_id), data)
+@router.patch("/{branch_id}", response_model=BranchResponse)
+def update_item(
+    branch_id: uuid.UUID,
+    data: BranchUpdate,
+    service: BranchService = Depends(get_branch_service),
+    current_user: Users = Depends(admin_only),
+):
+    return service.update_as(current_user, service.get_for_or_404(current_user, branch_id), data)
 
-@router.delete("/{branch_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(admin_only)])
-def delete_item(branch_id: uuid.UUID, service: BranchService = Depends(get_branch_service)):
-    service.delete(service.get_or_404(branch_id))
+@router.delete("/{branch_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_item(
+    branch_id: uuid.UUID,
+    service: BranchService = Depends(get_branch_service),
+    current_user: Users = Depends(admin_only),
+):
+    service.delete(service.get_for_or_404(current_user, branch_id))
 
-@router.post("/{branch_id}/restore", response_model=BranchResponse, dependencies=[Depends(admin_only)])
-def restore_item(branch_id: uuid.UUID, service: BranchService = Depends(get_branch_service)):
-    return service.restore(service.get_deleted_or_404(branch_id))
+@router.post("/{branch_id}/restore", response_model=BranchResponse)
+def restore_item(
+    branch_id: uuid.UUID,
+    service: BranchService = Depends(get_branch_service),
+    current_user: Users = Depends(admin_only),
+):
+    return service.restore(service.get_deleted_for_or_404(current_user, branch_id))
