@@ -12,6 +12,7 @@ class CustomerVisits(Base):
     posted_at = Column(DateTime, nullable=False, server_default=func.now(), index=True)
     customer_name = Column(String, nullable=False)
     phone = Column(String, nullable=False)
+    address = Column(String, nullable=True)
     customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.customer_id"), nullable=True, index=True)
     source_id = Column(UUID(as_uuid=True), ForeignKey("sources.source_id"))
     category_id = Column(UUID(as_uuid=True), ForeignKey("category.category_id"))

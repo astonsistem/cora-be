@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 class CustomerVisitBase(BaseModel):
     customer_name: str
     phone: str
+    address: str | None = None
     source_id: uuid.UUID
     category_id: uuid.UUID
     notes: str | None = None
@@ -18,6 +19,7 @@ class CustomerVisitCreate(BaseModel):
     customer_name: str | None = None
     phone: str | None = None
     branch_id: uuid.UUID | None = None
+    address: str | None = None
     source_id: uuid.UUID
     category_id: uuid.UUID
     notes: str | None = None
@@ -31,6 +33,7 @@ class CustomerVisitCreate(BaseModel):
 class CustomerVisitUpdate(BaseModel):
     customer_name: str | None = None
     phone: str | None = None
+    address: str | None = None
     source_id: uuid.UUID | None = None
     category_id: uuid.UUID | None = None
     notes: str | None = None
