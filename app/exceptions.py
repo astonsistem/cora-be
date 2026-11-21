@@ -20,6 +20,13 @@ class ConflictError(DomainError):
 class UnauthorizedError(DomainError):
     status_code = 401
 
+class TooManyRequestsError(DomainError):
+    status_code = 429
+
+    def __init__(self, retry_after: int):
+        super().__init__(f"Terlalu banyak percobaan. Coba lagi dalam {retry_after} detik.")
+        self.retry_after = retry_after
+
 class PayloadTooLargeError(DomainError):
     status_code = 413
 

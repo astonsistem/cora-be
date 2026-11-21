@@ -121,6 +121,12 @@ class VoucherService:
         self.db.refresh(voucher)
         return voucher
 
+    def update_design(self, voucher: Vouchers, design: dict | None) -> Vouchers:
+        voucher.design = design
+        self._commit("Desain voucher tidak dapat disimpan")
+        self.db.refresh(voucher)
+        return voucher
+
     def update(self, voucher: Vouchers, data: VoucherUpdate) -> Vouchers:
         values = data.model_dump(exclude_unset=True)
         for key in ("voucher_name", "quota_voucher", "status", "date_started", "date_expired"):

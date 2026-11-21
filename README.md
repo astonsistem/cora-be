@@ -25,7 +25,7 @@ Superadmin memilih company dan branch sendiri saat membuat customer visit.
 
 ## Voucher dan QR
 
-Scan QR, isi form visit, lalu klaim voucher tanpa login lewat `/public/qr/{code}`. Kode voucher diredeem di outlet lewat `/public/voucher-codes/{code}` atau divalidasi staff lewat `/voucher-claims`. Voucher dan QR dibuat per company. Voucher yang kuotanya habis atau sudah kedaluwarsa lebih dari 3 bulan dipindahkan ke arsip secara otomatis setiap hari (`VOUCHER_ARCHIVE_AFTER_DAYS`, bawaan 90). Daftarnya ada di `/vouchers/archived`. Setelah `git pull`, jalankan `alembic upgrade head`.
+Scan QR, isi form visit, lalu klaim voucher tanpa login lewat `/public/qr/{code}`. Kode voucher diredeem di outlet lewat `/public/voucher-codes/{code}` atau divalidasi staff lewat `/voucher-claims`. Voucher dan QR dibuat per company. Voucher yang kuotanya habis atau sudah kedaluwarsa lebih dari 3 bulan dipindahkan ke arsip secara otomatis setiap hari (`VOUCHER_ARCHIVE_AFTER_DAYS`, bawaan 90). Daftarnya ada di `/vouchers/archived`. Endpoint publik dibatasi per IP (`PUBLIC_RATE_LIMIT_PER_MINUTE`, `PUBLIC_SUBMIT_RATE_LIMIT_PER_MINUTE`, `PUBLIC_CODE_RATE_LIMIT_PER_MINUTE`; isi 0 untuk mematikan). Di belakang reverse proxy, set `TRUST_PROXY_HEADERS=true` supaya IP asli customer terbaca. Setelah `git pull`, jalankan `alembic upgrade head`.
 
 ## Tech Stack
 
