@@ -41,5 +41,6 @@ class RoleChecker:
         return current_user
 
 superadmin_only = RoleChecker(UserRole.superadmin)
+om_only = RoleChecker(UserRole.operasional_manager)
 admin_only = RoleChecker(UserRole.superadmin, UserRole.operasional_manager)
 manager_only = RoleChecker(UserRole.superadmin, UserRole.operasional_manager, UserRole.branch_manager)

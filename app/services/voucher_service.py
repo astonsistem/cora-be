@@ -1,16 +1,18 @@
 import uuid
-from datetime import date, datetime, time, timedelta
+from datetime import datetime
 
-from fastapi import HTTPException
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.exceptions import BadRequestError, ForbiddenError
+from app.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.models.branches import Branches
+from app.models.companies import Companies
 from app.models.users import Users
-from app.models.voucher import VoucherRedemptions, Vouchers
-from app.schemas.voucher_schema import RedemptionStatus, VoucherCreate, VoucherUpdate
+from app.models.voucher import VoucherCodes, Vouchers
+from app.models.voucher_qr import VoucherQrs
+from app.schemas.voucher_schema import VoucherCreate, VoucherUpdate
+from app.services.code_generator import CodeGenerator
 from app.services.company_scope import CompanyScope
 
 
@@ -18,170 +20,152 @@ class VoucherService:
     def __init__(self, db: Session, current_user: Users):
         self.db = db
         self.user = current_user
+        self.scope = CompanyScope(current_user)
 
-    def _scope(self, query):
-        if self.user.is_superadmin:
-            return query
-        if self.user.is_admin:
-            return query.where(Vouchers.branch_id.in_(self._company_branch_ids()))
-        if self.user.branch_id is None:
-            raise ForbiddenError("Akun Anda belum terhubung ke branch")
-        return query.where(Vouchers.branch_id == self.user.branch_id)
+    def _scoped(self, query):
+        if self.scope.restricted:
+            return query.where(Vouchers.company_id == self.scope.company_id)
+        return query
 
-    def _company_branch_ids(self):
-        if self.user.company_id is None:
-            raise ForbiddenError("Akun Anda belum terhubung ke company")
-        return select(Branches.branch_id).where(Branches.company_id == self.user.company_id)
+    def _resolve_company(self, company_id: uuid.UUID | None) -> uuid.UUID:
+        if self.scope.restricted:
+            return self.scope.company_id
+        if company_id is None:
+            raise BadRequestError("company_id wajib diisi")
+        if self.db.get(Companies, company_id) is None:
+            raise BadRequestError("Company tidak ditemukan")
+        return company_id
 
-    def _resolve_branch(self, branch_id: uuid.UUID | None) -> uuid.UUID:
-        if not self.user.is_admin:
-            if self.user.branch_id is None:
-                raise ForbiddenError("Akun Anda belum terhubung ke branch")
-            return self.user.branch_id
-        if branch_id is None:
-            raise BadRequestError("branch_id wajib diisi")
-        branch = self.db.get(Branches, branch_id)
-        if branch is None:
-            raise BadRequestError("Cabang tidak valid")
-        CompanyScope(self.user).ensure_branch(branch)
-        return branch_id
+    def _validated_branch_ids(self, company_id: uuid.UUID, branch_ids: list[uuid.UUID] | None):
+        if not branch_ids:
+            return None
+        unique_ids = list(dict.fromkeys(branch_ids))
+        found = self.db.scalar(
+            select(func.count())
+            .select_from(Branches)
+            .where(Branches.branch_id.in_(unique_ids), Branches.company_id == company_id)
+        )
+        if found != len(unique_ids):
+            raise BadRequestError("Ada branch yang bukan milik company voucher ini")
+        return unique_ids
 
-    def _commit(self, conflict_message: str) -> None:
+    def _unique_value(self, generator: CodeGenerator, column) -> str:
+        for _ in range(10):
+            value = generator.next()
+            if self.db.scalar(select(Vouchers.voucher_id).where(column == value)) is None:
+                return value
+        raise ConflictError("Gagal membuat kode unik, coba lagi")
+
+    def _commit(self, message: str) -> None:
         try:
             self.db.commit()
         except IntegrityError:
             self.db.rollback()
-            raise HTTPException(409, conflict_message)
+            raise ConflictError(message)
 
     def get_or_404(self, voucher_id: uuid.UUID) -> Vouchers:
         voucher = self.db.scalar(
-            self._scope(select(Vouchers).where(Vouchers.voucher_id == voucher_id))
+            self._scoped(select(Vouchers).where(Vouchers.voucher_id == voucher_id, Vouchers.archived_at.is_(None)))
         )
         if voucher is None:
-            raise HTTPException(404, "Voucher tidak ditemukan")
+            raise NotFoundError("Voucher tidak ditemukan")
         return voucher
 
-    def _list_query(self, is_active: bool | None, branch_id: uuid.UUID | None):
-        query = self._scope(select(Vouchers))
-        if is_active is not None:
-            query = query.where(Vouchers.is_active.is_(is_active))
-        if branch_id and self.user.is_admin:
-            query = query.where(Vouchers.branch_id == branch_id)
+    def _list_query(self, status: str | None, company_id: uuid.UUID | None):
+        query = self._scoped(select(Vouchers)).where(Vouchers.archived_at.is_(None))
+        if status:
+            query = query.where(Vouchers.status == status)
+        if company_id and not self.scope.restricted:
+            query = query.where(Vouchers.company_id == company_id)
         return query
 
-    def get_all(self, skip=0, limit=100, is_active=None, branch_id=None) -> list[Vouchers]:
-        query = self._list_query(is_active, branch_id).order_by(Vouchers.created_at.desc())
+    def get_all(self, skip: int = 0, limit: int = 100, status=None, company_id=None) -> list[Vouchers]:
+        query = self._list_query(status, company_id).order_by(Vouchers.created_at.desc())
         return list(self.db.scalars(query.offset(skip).limit(limit)))
 
-    def count_all(self, is_active=None, branch_id=None) -> int:
-        subquery = self._list_query(is_active, branch_id).subquery()
+    def count_all(self, status=None, company_id=None) -> int:
+        subquery = self._list_query(status, company_id).subquery()
+        return self.db.scalar(select(func.count()).select_from(subquery)) or 0
+
+    def _archived_query(self, search: str | None):
+        query = self._scoped(select(Vouchers)).where(Vouchers.archived_at.isnot(None))
+        if search and search.strip():
+            pattern = f"%{search.strip()}%"
+            query = query.where(or_(Vouchers.voucher_name.ilike(pattern), Vouchers.code.ilike(pattern)))
+        return query
+
+    def get_archived(self, skip: int = 0, limit: int = 100, search: str | None = None) -> list[Vouchers]:
+        query = self._archived_query(search).order_by(Vouchers.archived_at.desc(), Vouchers.voucher_name)
+        return list(self.db.scalars(query.offset(skip).limit(limit)))
+
+    def count_archived(self, search: str | None = None) -> int:
+        subquery = self._archived_query(search).subquery()
         return self.db.scalar(select(func.count()).select_from(subquery)) or 0
 
     def create(self, data: VoucherCreate) -> Vouchers:
+        company_id = self._resolve_company(data.company_id)
+        code = (data.code or "").strip().upper() or self._unique_value(
+            CodeGenerator.for_voucher_definition(), Vouchers.code
+        )
         voucher = Vouchers(
-            **data.model_dump(exclude={"branch_id"}),
-            branch_id=self._resolve_branch(data.branch_id),
+            **data.model_dump(exclude={"company_id", "code", "branch_ids", "status"}),
+            status=data.status.value,
+            company_id=company_id,
+            code=code,
+            branch_ids=self._validated_branch_ids(company_id, data.branch_ids),
+            qr_slug=self._unique_value(CodeGenerator.for_qr(), Vouchers.qr_slug),
             created_by=self.user.user_id,
         )
         self.db.add(voucher)
-        self._commit("Voucher dengan nama ini sudah ada di cabang tersebut, atau cabang tidak valid")
+        self._commit("Kode atau nama voucher sudah dipakai di company ini")
         self.db.refresh(voucher)
         return voucher
 
     def update(self, voucher: Vouchers, data: VoucherUpdate) -> Vouchers:
         values = data.model_dump(exclude_unset=True)
-        for key in ("name", "quota", "is_active"):
+        for key in ("voucher_name", "quota_voucher", "status", "date_started", "date_expired"):
             if key in values and values[key] is None:
                 values.pop(key)
 
-        if "quota" in values and values["quota"] < voucher.used_count:
-            raise BadRequestError("Kuota tidak boleh lebih kecil dari voucher yang sudah ditukar")
+        if "quota_voucher" in values and values["quota_voucher"] < voucher.used_count:
+            raise BadRequestError("Kuota tidak boleh lebih kecil dari voucher yang sudah diklaim")
 
-        valid_from = values.get("valid_from", voucher.valid_from)
-        valid_until = values.get("valid_until", voucher.valid_until)
-        if valid_from and valid_until and valid_until < valid_from:
-            raise BadRequestError("valid_until tidak boleh lebih awal dari valid_from")
+        date_started = values.get("date_started", voucher.date_started)
+        date_expired = values.get("date_expired", voucher.date_expired)
+        if date_expired < date_started:
+            raise BadRequestError("date_expired tidak boleh lebih awal dari date_started")
+
+        if "branch_ids" in values:
+            values["branch_ids"] = self._validated_branch_ids(voucher.company_id, values["branch_ids"])
+        if "status" in values:
+            values["status"] = values["status"].value
+        if values.get("qr_target_id") is not None:
+            self._ensure_qr_in_company(voucher.company_id, values["qr_target_id"])
 
         for key, value in values.items():
             setattr(voucher, key, value)
-        self._commit("Voucher dengan nama ini sudah ada di cabang tersebut")
+        self._sync_sold_out(voucher)
+        self._commit("Nama voucher sudah dipakai di company ini")
         self.db.refresh(voucher)
         return voucher
 
+    @staticmethod
+    def _sync_sold_out(voucher: Vouchers) -> None:
+        if voucher.used_count > 0 and voucher.used_count >= voucher.quota_voucher:
+            voucher.sold_out_at = voucher.sold_out_at or datetime.now()
+        else:
+            voucher.sold_out_at = None
+
+    def _ensure_qr_in_company(self, company_id: uuid.UUID, qr_id: uuid.UUID) -> None:
+        qr = self.db.get(VoucherQrs, qr_id)
+        if qr is None or qr.company_id != company_id:
+            raise BadRequestError("QR tujuan tidak valid untuk company ini")
+
     def delete(self, voucher: Vouchers) -> None:
-        total = self.db.scalar(
-            select(func.count())
-            .select_from(VoucherRedemptions)
-            .where(VoucherRedemptions.voucher_id == voucher.voucher_id)
-        ) or 0
-        if total:
-            raise BadRequestError("Voucher sudah memiliki penukaran. Nonaktifkan saja, jangan dihapus")
+        issued = self.db.scalar(
+            select(func.count()).select_from(VoucherCodes).where(VoucherCodes.voucher_id == voucher.voucher_id)
+        )
+        if issued:
+            raise ConflictError("Voucher sudah pernah diklaim. Nonaktifkan saja, jangan dihapus")
         self.db.delete(voucher)
         self.db.commit()
-
-    def _redemption_query(self, voucher_id, status, search, date_from, date_to):
-        query = self._scope(
-            select(VoucherRedemptions).join(
-                Vouchers, Vouchers.voucher_id == VoucherRedemptions.voucher_id
-            )
-        )
-        if voucher_id:
-            query = query.where(VoucherRedemptions.voucher_id == voucher_id)
-        if status:
-            query = query.where(VoucherRedemptions.status == status.value)
-        if search:
-            pattern = f"%{search.strip()}%"
-            query = query.where(
-                or_(
-                    VoucherRedemptions.full_name.ilike(pattern),
-                    VoucherRedemptions.phone.ilike(pattern),
-                    VoucherRedemptions.phone_norm.ilike(pattern),
-                )
-            )
-        if date_from:
-            query = query.where(
-                VoucherRedemptions.submitted_at >= datetime.combine(date_from, time.min)
-            )
-        if date_to:
-            query = query.where(
-                VoucherRedemptions.submitted_at
-                < datetime.combine(date_to + timedelta(days=1), time.min)
-            )
-        return query
-
-    def get_redemptions(
-        self,
-        skip: int = 0,
-        limit: int = 100,
-        voucher_id: uuid.UUID | None = None,
-        status: RedemptionStatus | None = None,
-        search: str | None = None,
-        date_from: date | None = None,
-        date_to: date | None = None,
-    ) -> list[VoucherRedemptions]:
-        query = self._redemption_query(voucher_id, status, search, date_from, date_to)
-        query = query.order_by(VoucherRedemptions.submitted_at.desc())
-        return list(self.db.scalars(query.offset(skip).limit(limit)))
-
-    def count_redemptions(
-        self, voucher_id=None, status=None, search=None, date_from=None, date_to=None
-    ) -> int:
-        subquery = self._redemption_query(voucher_id, status, search, date_from, date_to).subquery()
-        return self.db.scalar(select(func.count()).select_from(subquery)) or 0
-
-    def update_redemption_status(
-        self, redemption_id: uuid.UUID, status: RedemptionStatus
-    ) -> VoucherRedemptions:
-        redemption = self.db.scalar(
-            self._scope(
-                select(VoucherRedemptions)
-                .join(Vouchers, Vouchers.voucher_id == VoucherRedemptions.voucher_id)
-                .where(VoucherRedemptions.redemption_id == redemption_id)
-            )
-        )
-        if redemption is None:
-            raise HTTPException(404, "Data penukaran tidak ditemukan")
-        redemption.status = status.value
-        self.db.commit()
-        self.db.refresh(redemption)
-        return redemption

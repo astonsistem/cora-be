@@ -15,8 +15,10 @@ class Settings:
         self.asis_base_url = os.getenv("ASIS_BASE_URL")
         self.asis_username = os.getenv("ASIS_USERNAME")
         self.asis_password = os.getenv("ASIS_PASSWORD")
+        self.asis_secret_key = os.getenv("ASIS_SECRET_KEY")
 
         self.customer_trash_retention_days = int(os.getenv("CUSTOMER_TRASH_RETENTION_DAYS", "90"))
+        self.voucher_archive_after_days = int(os.getenv("VOUCHER_ARCHIVE_AFTER_DAYS", "90"))
 
         self.log_level = os.getenv("LOG_LEVEL", "INFO")
 

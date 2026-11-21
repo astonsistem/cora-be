@@ -5,7 +5,7 @@ from fastapi import Depends, File, Response, UploadFile, status
 from app.core.response.envelope import ApiRouter
 from app.dependencies import get_user_service
 from app.exceptions import BadRequestError, ForbiddenError, NotFoundError, PayloadTooLargeError, UnsupportedMediaError
-from app.middleware.auth_middleware import admin_only, get_current_user, superadmin_only
+from app.middleware.auth_middleware import admin_only, get_current_user
 from app.models.users import UserRole, Users
 from app.schemas.user_schema import UserCreate, UserResponse, UserUpdate
 from app.services.user_service import UserService
@@ -44,7 +44,7 @@ def get_user(
     current_user: Users = Depends(get_current_user),
 ):
     _require_self_or_om(current_user, user_id)
-    return service.get_or_404(user_id)
+    return service.get_for(current_user, user_id)
 
 @router.get("/{user_id}/photo")
 def get_user_photo(user_id: uuid.UUID, service: UserService = Depends(get_user_service)):
@@ -65,7 +65,7 @@ async def upload_user_photo(
     current_user: Users = Depends(get_current_user),
 ):
     _require_self_or_om(current_user, user_id)
-    user = service.get_or_404(user_id)
+    user = service.get_for(current_user, user_id)
 
     data = await file.read(MAX_PHOTO_BYTES + 1)
     if not data:
@@ -86,11 +86,15 @@ def delete_user_photo(
     current_user: Users = Depends(get_current_user),
 ):
     _require_self_or_om(current_user, user_id)
-    service.delete_photo(service.get_or_404(user_id))
+    service.delete_photo(service.get_for(current_user, user_id))
 
-@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(admin_only)])
-def create_user(data: UserCreate, service: UserService = Depends(get_user_service)):
-    return service.create(data)
+@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+def create_user(
+    data: UserCreate,
+    service: UserService = Depends(get_user_service),
+    current_user: Users = Depends(admin_only),
+):
+    return service.create_as(current_user, data)
 
 @router.patch("/{user_id}", response_model=UserResponse)
 def update_user(
@@ -99,9 +103,7 @@ def update_user(
     service: UserService = Depends(get_user_service),
     current_user: Users = Depends(admin_only),
 ):
-    user = service.get_or_404(user_id)
-    service.ensure_can_manage(current_user, data.user_role, user.user_role)
-    return service.update(user, data)
+    return service.update_as(current_user, service.get_or_404(user_id), data)
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
@@ -109,6 +111,4 @@ def delete_user(
     service: UserService = Depends(get_user_service),
     current_user: Users = Depends(admin_only),
 ):
-    user = service.get_or_404(user_id)
-    service.ensure_can_manage(current_user, None, user.user_role)
-    service.delete(user)
+    service.delete_as(current_user, service.get_or_404(user_id))

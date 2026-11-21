@@ -32,14 +32,16 @@ class ReportService:
             func.count(distinct(CUSTOMER_KEY)),
             func.count(distinct(CustomerVisits.user_id)),
             func.count(CustomerVisits.visit_id).filter(CustomerVisits.is_posted_to_asis.is_(True)),
+            func.count(CustomerVisits.visit_id).filter(CustomerVisits.qr_id.is_not(None)),
         )
-        total_visits, total_customers, active_users, posted = self.db.execute(query).one()
+        total_visits, total_customers, active_users, posted, qr_visits = self.db.execute(query).one()
         return {
             "total_visits": total_visits,
             "total_customers": total_customers,
             "active_users": active_users,
             "posted_to_asis": posted,
             "not_posted_to_asis": total_visits - posted,
+            "qr_visits": qr_visits,
         }
 
     def visit_trend(self, criteria: TrendFilter) -> list[dict]:

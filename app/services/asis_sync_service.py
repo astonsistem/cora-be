@@ -1,15 +1,17 @@
+import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.integrations.asis_client import AsisClient, AsisGateway
-from app.exceptions import BadRequestError
+from app.core.integrations.asis_client import AsisGateway
+from app.exceptions import BadRequestError, NotFoundError
 from app.models.branches import Branches
 from app.models.category import Category
 from app.models.companies import Companies
 from app.exceptions import ForbiddenError
+from app.services.asis_gateway_provider import AsisGatewayProvider
 from app.services.company_scope import CompanyScope
 
 
@@ -193,6 +195,13 @@ class CategorySyncer(BaseSyncer):
     label = "Category"
     fields = ("name",)
 
+    def __init__(self, db: Session, company_id: uuid.UUID):
+        super().__init__(db)
+        self.company_id = company_id
+
+    def _company_categories(self) -> list[Category]:
+        return list(self.db.scalars(select(Category).where(Category.company_id == self.company_id)))
+
     def fetch(self, gateway):
         return gateway.get_categories()
 
@@ -206,7 +215,7 @@ class CategorySyncer(BaseSyncer):
     def upsert(self, parsed, now):
         existing = {}
         legacy = {} 
-        for c in self.db.scalars(select(Category)):
+        for c in self._company_categories():
             if c.asis_category_id:
                 existing[c.asis_category_id] = c
             else:
@@ -222,14 +231,14 @@ class CategorySyncer(BaseSyncer):
                 existing[asis_id] = category
                 updated += 1
             else:
-                category = Category(asis_category_id=asis_id, **values)
+                category = Category(company_id=self.company_id, asis_category_id=asis_id, **values)
                 self.db.add(category)
                 existing[asis_id] = category
                 created += 1
         return {"created": created, "updated": updated}
 
     def preview(self, gateway):
-        local = {c.asis_category_id: c for c in self.db.scalars(select(Category)) if c.asis_category_id}
+        local = {c.asis_category_id: c for c in self._company_categories() if c.asis_category_id}
         result = {"new": [], "changed": []}
         for asis_id, values in filter(None, map(self.parse, self.fetch(gateway))):
             category = local.get(asis_id)
@@ -242,37 +251,70 @@ class CategorySyncer(BaseSyncer):
         return result
 
 class AsisSyncService:
+    EMPTY_PREVIEW = {"new": [], "changed": []}
+
     def __init__(self, db: Session, gateway: AsisGateway | None = None, scope: CompanyScope | None = None):
         self.db = db
         self._gateway = gateway
         self.scope = scope
+        self.provider = AsisGatewayProvider(db)
         self.companies = CompanySyncer(db)
         self.branches = BranchSyncer(db)
-        self.categories = CategorySyncer(db)
 
     @property
     def gateway(self) -> AsisGateway:
         if self._gateway is None:
-            self._gateway = AsisClient()
+            self._gateway = (
+                self.provider.for_company(self.scope.company_id) if self._restricted else self.provider.default()
+            )
         return self._gateway
 
-    def sync_all(self) -> dict:
+    def _company_gateway(self, company_id: uuid.UUID) -> AsisGateway:
+        return self._gateway or self.provider.for_company(company_id)
+
+    def _category_target(self, company_id: uuid.UUID | None) -> uuid.UUID | None:
+        return self.scope.company_id if self._restricted else company_id
+
+    def sync_all(self, company_id: uuid.UUID | None = None) -> dict:
+        target = self._category_target(company_id)
         if self._restricted:
-            return self._sync_own_branches()
-        return {
+            return {**self._sync_own_branches(), "categories": self._sync_categories(target)}
+        result = {
             "companies": self.companies.sync(self.gateway),
             "branches": self.branches.sync(self.gateway),
-            "categories": self.categories.sync(self.gateway),
+        }
+        if target:
+            result["categories"] = self._sync_categories(target)
+        return result
+
+    def initial_sync(self, company_id: uuid.UUID) -> dict:
+        company = self.db.get(Companies, company_id)
+        if company is None or company.deleted_at is not None:
+            raise NotFoundError("Company tidak ditemukan")
+        if not company.asis_company_id:
+            raise BadRequestError("Company belum terhubung ke ASIS")
+        gateway = self._company_gateway(company_id)
+        return {
+            "branches": self.branches.sync_company(gateway, company.asis_company_id),
+            "categories": CategorySyncer(self.db, company_id).sync(gateway),
         }
 
-    def preview(self) -> dict:
+    def preview(self, company_id: uuid.UUID | None = None) -> dict:
         self._require_scope()
+        target = self._category_target(company_id)
         result = {
             "companies": self.companies.preview(self.gateway),
             "branches": self.branches.preview(self.gateway),
-            "categories": self.categories.preview(self.gateway),
+            "categories": (
+                CategorySyncer(self.db, target).preview(self._company_gateway(target))
+                if target
+                else dict(self.EMPTY_PREVIEW)
+            ),
         }
         return self._limit_preview(result) if self._restricted else result
+
+    def _sync_categories(self, company_id: uuid.UUID) -> dict:
+        return CategorySyncer(self.db, company_id).sync(self._company_gateway(company_id))
 
     def _sync_own_branches(self) -> dict:
         own_asis_id = self.scope.asis_company_id(self.db)
@@ -318,16 +360,13 @@ class AsisSyncService:
         company_ids: list[str],
         branch_ids: list[str],
         category_ids: list[str] | None = None,
+        company_id: uuid.UUID | None = None,
     ) -> None:
         self._require_scope()
         wanted_companies = set(company_ids)
         wanted_branches = set(branch_ids)
 
-        asis_categories = {}
-        if category_ids is None or category_ids:
-            asis_categories = self.categories.index(self.gateway)
-        wanted_categories = set(asis_categories) if category_ids is None else set(category_ids)
-        self._ensure_exist(self.categories, wanted_categories, asis_categories)
+        categories, asis_categories, wanted_categories = self._select_categories(company_id, category_ids)
 
         asis_companies = self.companies.index(self.gateway) if wanted_companies else {}
         asis_branches = self.branches.index(self.gateway) if wanted_branches else {}
@@ -353,8 +392,26 @@ class AsisSyncService:
         self.companies.upsert([asis_companies[i] for i in sorted(wanted_companies)], now)
         self.db.flush()
         self.branches.upsert([asis_branches[i] for i in sorted(wanted_branches)], now)
-        self.categories.upsert([asis_categories[i] for i in sorted(wanted_categories)], now)
+        if categories is not None:
+            categories.upsert([asis_categories[i] for i in sorted(wanted_categories)], now)
         self.db.commit()
+
+    def _select_categories(
+        self, company_id: uuid.UUID | None, category_ids: list[str] | None
+    ) -> tuple[CategorySyncer | None, dict, set[str]]:
+        target = self._category_target(company_id)
+        if target is None:
+            if category_ids:
+                raise BadRequestError("Pilih company untuk sinkronisasi kategori")
+            return None, {}, set()
+
+        syncer = CategorySyncer(self.db, target)
+        asis_categories = {}
+        if category_ids is None or category_ids:
+            asis_categories = syncer.index(self._company_gateway(target))
+        wanted = set(asis_categories) if category_ids is None else set(category_ids)
+        self._ensure_exist(syncer, wanted, asis_categories)
+        return syncer, asis_categories, wanted
 
     @staticmethod
     def _ensure_exist(syncer: BaseSyncer, wanted: set[str], available: dict) -> None:

@@ -1,10 +1,11 @@
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.core.integrations.asis_client import AsisClient, AsisGateway
+from app.core.integrations.asis_client import AsisGateway
 from app.exceptions import BadRequestError
 from app.models.customer_visits import CustomerVisits
 from app.models.customers import Customers, normalize_name, normalize_phone, phones_match
+from app.services.asis_gateway_provider import AsisGatewayProvider
 
 PARTNER_EMAIL = "-"
 
@@ -25,13 +26,13 @@ class CustomerPostService:
     def __init__(self, db: Session, gateway: AsisGateway | None = None):
         self.db = db
         self._gateway = gateway
+        self._provider = AsisGatewayProvider(db)
 
-    @property
-    def gateway(self) -> AsisGateway:
+    def gateway_for(self, customer: Customers) -> AsisGateway:
         # Dibuat saat pertama dipakai, supaya request yang gagal validasi lokal tidak menyentuh ASIS.
-        if self._gateway is None:
-            self._gateway = AsisClient()
-        return self._gateway
+        if self._gateway is not None:
+            return self._gateway
+        return self._provider.for_company(customer.branch.company_id)
 
     @staticmethod
     def build_payload(customer: Customers) -> dict:
@@ -56,7 +57,7 @@ class CustomerPostService:
 
     def find_existing_partner(self, customer: Customers) -> str | None:
         """Cari customer yang sama di ASIS: branch sama, nama sama, dan nomor telepon cocok."""
-        for item in self.gateway.find_partners(customer.branch.asis_branch_id, customer.name):
+        for item in self.gateway_for(customer).find_partners(customer.branch.asis_branch_id, customer.name):
             if normalize_name(item.get("name")) != customer.name_search:
                 continue
             if phones_match(normalize_phone(item.get("phone")) or None, customer.phone_norm):
@@ -97,7 +98,7 @@ class CustomerPostService:
             if linked_existing:
                 self._ensure_partner_not_taken(customer, partner_id)
             else:
-                partner_id = self.gateway.create_partner(payload)
+                partner_id = self.gateway_for(customer).create_partner(payload)
         except Exception:
             self.db.rollback()
             raise
