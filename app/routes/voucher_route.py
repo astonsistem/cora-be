@@ -4,7 +4,7 @@ from fastapi import Depends, Response, status
 
 from app.core.response.envelope import ApiRouter
 from app.dependencies import get_voucher_service
-from app.middleware.auth_middleware import admin_only, manager_only, om_only
+from app.middleware.auth_middleware import admin_only, manager_only
 from app.models.voucher import VoucherStatus
 from app.schemas.voucher_schema import VoucherCreate, VoucherDesignUpdate, VoucherResponse, VoucherUpdate
 from app.services.voucher_service import VoucherService
@@ -39,7 +39,7 @@ def list_archived_vouchers(
     "/",
     response_model=VoucherResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(om_only)],
+    dependencies=[Depends(admin_only)],
 )
 def create_voucher(data: VoucherCreate, service: VoucherService = Depends(get_voucher_service)):
     return service.create(data)
@@ -48,7 +48,7 @@ def create_voucher(data: VoucherCreate, service: VoucherService = Depends(get_vo
 def get_voucher(voucher_id: uuid.UUID, service: VoucherService = Depends(get_voucher_service)):
     return service.get_or_404(voucher_id)
 
-@router.patch("/{voucher_id}", response_model=VoucherResponse, dependencies=[Depends(om_only)])
+@router.patch("/{voucher_id}", response_model=VoucherResponse, dependencies=[Depends(admin_only)])
 def update_voucher(
     voucher_id: uuid.UUID,
     data: VoucherUpdate,
@@ -64,6 +64,6 @@ def update_voucher_design(
 ):
     return service.update_design(service.get_or_404(voucher_id), data.design)
 
-@router.delete("/{voucher_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(om_only)])
+@router.delete("/{voucher_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(admin_only)])
 def delete_voucher(voucher_id: uuid.UUID, service: VoucherService = Depends(get_voucher_service)):
     service.delete(service.get_or_404(voucher_id))
