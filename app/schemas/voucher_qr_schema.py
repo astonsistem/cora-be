@@ -95,6 +95,7 @@ class QrSubmit(BaseModel):
 
     name: str = Field(min_length=1, max_length=150)
     phone: str = Field(min_length=1, max_length=30)
+    address: str = Field(min_length=1, max_length=300)
     category_id: uuid.UUID | None = None
     answers: list[QrAnswer] = Field(default_factory=list)
 

@@ -101,6 +101,7 @@ class QrVisitService:
             user_id=None,
             customer_name=data.name,
             phone=phone,
+            address=data.address,
             source_id=qr.source_id,
             category_id=self._resolve_category(qr, data.category_id),
             qr_id=qr.qr_id,
