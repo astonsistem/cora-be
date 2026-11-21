@@ -31,7 +31,9 @@ def validation_message(errors: list[dict]) -> str:
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainError)
     async def domain_error_handler(request: Request, exc: DomainError):
-        return error_response(exc.status_code, exc.detail)
+        retry_after = getattr(exc, "retry_after", None)
+        headers = {"Retry-After": str(retry_after)} if retry_after else None
+        return error_response(exc.status_code, exc.detail, headers=headers)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
