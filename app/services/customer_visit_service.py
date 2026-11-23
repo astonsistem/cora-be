@@ -4,9 +4,10 @@ from datetime import date
 from sqlalchemy import distinct, func, select
 from sqlalchemy.orm import Session
 
-from app.exceptions import BadRequestError, ForbiddenError
+from app.exceptions import BadRequestError, ConflictError, ForbiddenError
 from app.models.customer_visits import CustomerVisits
 from app.models.users import Users
+from app.models.voucher import ClaimStatus, VoucherClaims, VoucherCodes
 from app.schemas.customer_visit_schema import CustomerVisitCreate
 from app.services.base_service import CrudService
 from app.services.category_guard import CategoryGuard
@@ -78,6 +79,19 @@ class CustomerVisitService(CrudService[CustomerVisits]):
         )
         total_visits, total_customers = self.db.execute(self._in_period(query, date_from, date_to)).one()
         return {"total_visits": total_visits, "total_customers": total_customers}
+
+    def delete(self, visit: CustomerVisits) -> None:
+        codes = list(self.db.scalars(select(VoucherCodes).where(VoucherCodes.visit_id == visit.visit_id)))
+        claims = [claim for code in codes for claim in code.claims]
+        if any(claim.status != ClaimStatus.cancelled.value for claim in claims):
+            raise ConflictError("Visit ini sudah punya voucher yang diklaim atau ditukar, jadi tidak bisa dihapus")
+        for claim in claims:
+            self.db.delete(claim)
+        self.db.flush()
+        for code in codes:
+            self.db.delete(code)
+        self.db.flush()
+        super().delete(visit)
 
     def _build(self, data: CustomerVisitCreate) -> CustomerVisits:
         if data.customer_id:
