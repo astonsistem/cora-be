@@ -25,6 +25,10 @@ EXPECTED = [
     ("GET", "/auth/me", ALL),
 
     # Master data: semua role boleh membaca (scope data tetap berlaku), hanya OM yang mengubah
+    ("GET", "/activity-logs/", OM),
+    ("GET", "/activity-logs/filter-options", OM),
+    ("GET", "/activity-logs/archived", SUPER),
+
     ("GET", "/users/", ALL),
     ("GET", "/users/{id}", OM),
     ("POST", "/users/", OM),

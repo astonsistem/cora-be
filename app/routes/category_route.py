@@ -3,10 +3,11 @@ import uuid
 from fastapi import Depends, Response, status
 
 from app.core.response.envelope import ApiRouter
-from app.dependencies import get_category_service, get_data_reset_service
+from app.dependencies import get_activity_logger, get_category_service, get_data_reset_service
 from app.middleware.auth_middleware import admin_only, get_current_user
 from app.models.users import Users
 from app.schemas.category_schema import CategoryCreate, CategoryResponse, CategoryUpdate
+from app.services.activity_logger import Action, ActivityLogger, Module
 from app.services.category_service import CategoryService
 from app.services.data_reset_service import DataResetService
 
@@ -40,8 +41,14 @@ def reset_impact(company_id: uuid.UUID | None = None, service: DataResetService 
     return service.category_impact(company_id)
 
 @router.post("/reset", dependencies=[Depends(admin_only)])
-def reset_categories(company_id: uuid.UUID | None = None, service: DataResetService = Depends(get_data_reset_service)):
-    return service.reset_categories(company_id)
+def reset_categories(
+    company_id: uuid.UUID | None = None,
+    service: DataResetService = Depends(get_data_reset_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
+):
+    result = service.reset_categories(company_id)
+    activity.record(Action.delete, Module.master, "Mereset seluruh data category")
+    return result
 
 @router.get("/{category_id}", response_model=CategoryResponse)
 def get_item(
@@ -56,8 +63,11 @@ def create_item(
     data: CategoryCreate,
     service: CategoryService = Depends(get_category_service),
     current_user: Users = Depends(admin_only),
+    activity: ActivityLogger = Depends(get_activity_logger),
 ):
-    return service.create_as(current_user, data)
+    category = service.create_as(current_user, data)
+    activity.created(Module.master, "category", category.name)
+    return category
 
 @router.patch("/{category_id}", response_model=CategoryResponse)
 def update_item(
@@ -65,21 +75,31 @@ def update_item(
     data: CategoryUpdate,
     service: CategoryService = Depends(get_category_service),
     current_user: Users = Depends(admin_only),
+    activity: ActivityLogger = Depends(get_activity_logger),
 ):
-    return service.update(service.get_for_or_404(current_user, category_id), data)
+    category = service.update(service.get_for_or_404(current_user, category_id), data)
+    activity.updated(Module.master, "category", category.name)
+    return category
 
 @router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_item(
     category_id: uuid.UUID,
     service: CategoryService = Depends(get_category_service),
     current_user: Users = Depends(admin_only),
+    activity: ActivityLogger = Depends(get_activity_logger),
 ):
-    service.delete(service.get_for_or_404(current_user, category_id))
+    category = service.get_for_or_404(current_user, category_id)
+    name = category.name
+    service.delete(category)
+    activity.deleted(Module.master, "category", name)
 
 @router.post("/{category_id}/restore", response_model=CategoryResponse)
 def restore_item(
     category_id: uuid.UUID,
     service: CategoryService = Depends(get_category_service),
     current_user: Users = Depends(admin_only),
+    activity: ActivityLogger = Depends(get_activity_logger),
 ):
-    return service.restore(service.get_deleted_for_or_404(current_user, category_id))
+    category = service.restore(service.get_deleted_for_or_404(current_user, category_id))
+    activity.restored(Module.master, "category", category.name)
+    return category

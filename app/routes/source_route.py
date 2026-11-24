@@ -3,9 +3,10 @@ import uuid
 from fastapi import Depends, Response, status
 
 from app.core.response.envelope import ApiRouter
-from app.dependencies import get_source_service
+from app.dependencies import get_activity_logger, get_source_service
 from app.middleware.auth_middleware import admin_only, get_current_user
 from app.schemas.source_schema import SourceCreate, SourceResponse, SourceUpdate
+from app.services.activity_logger import Action, ActivityLogger, Module
 from app.services.source_service import SourceService
 
 router = ApiRouter(prefix="/sources", tags=["Source"], dependencies=[Depends(get_current_user)])
@@ -30,17 +31,43 @@ def get_item(source_id: uuid.UUID, service: SourceService = Depends(get_source_s
     return service.get_or_404(source_id)
 
 @router.post("/", response_model=SourceResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(admin_only)])
-def create_item(data: SourceCreate, service: SourceService = Depends(get_source_service)):
-    return service.create(data)
+def create_item(
+    data: SourceCreate,
+    service: SourceService = Depends(get_source_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
+):
+    source = service.create(data)
+    activity.created(Module.master, "source", source.name)
+    return source
 
 @router.patch("/{source_id}", response_model=SourceResponse, dependencies=[Depends(admin_only)])
-def update_item(source_id: uuid.UUID, data: SourceUpdate, service: SourceService = Depends(get_source_service)):
-    return service.update(service.get_or_404(source_id), data)
+def update_item(
+    source_id: uuid.UUID,
+    data: SourceUpdate,
+    service: SourceService = Depends(get_source_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
+):
+    source = service.update(service.get_or_404(source_id), data)
+    activity.updated(Module.master, "source", source.name)
+    return source
 
 @router.delete("/{source_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(admin_only)])
-def delete_item(source_id: uuid.UUID, service: SourceService = Depends(get_source_service)):
-    service.delete(service.get_or_404(source_id))
+def delete_item(
+    source_id: uuid.UUID,
+    service: SourceService = Depends(get_source_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
+):
+    source = service.get_or_404(source_id)
+    name = source.name
+    service.delete(source)
+    activity.deleted(Module.master, "source", name)
 
 @router.post("/{source_id}/restore", response_model=SourceResponse, dependencies=[Depends(admin_only)])
-def restore_item(source_id: uuid.UUID, service: SourceService = Depends(get_source_service)):
-    return service.restore(service.get_deleted_or_404(source_id))
+def restore_item(
+    source_id: uuid.UUID,
+    service: SourceService = Depends(get_source_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
+):
+    source = service.restore(service.get_deleted_or_404(source_id))
+    activity.restored(Module.master, "source", source.name)
+    return source

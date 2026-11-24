@@ -10,10 +10,12 @@ from app.core.database.database import get_db
 from app.core.log.logging_config import AppLogging
 from app.middleware.CORS_middleware import register_cors
 from app.middleware.error_handler import register_exception_handlers
+from app.services.activity_log_archive_service import ActivityLogArchiveScheduler, ActivityLogArchiveService
 from app.services.customer_purge_service import CustomerPurgeScheduler, CustomerPurgeService
 from app.services.voucher_archive_service import VoucherArchiveScheduler, VoucherArchiveService
 
 from app.routes import (
+    activity_log_route,
     asis_credential_route,
     asis_route,
     auth_route,
@@ -40,6 +42,7 @@ async def lifespan(app: FastAPI):
     tasks = [
         asyncio.create_task(CustomerPurgeScheduler(CustomerPurgeService()).run()),
         asyncio.create_task(VoucherArchiveScheduler(VoucherArchiveService()).run()),
+        asyncio.create_task(ActivityLogArchiveScheduler(ActivityLogArchiveService()).run()),
     ]
     try:
         yield
@@ -56,6 +59,7 @@ register_cors(app)
 register_exception_handlers(app)
 
 for module in (
+    activity_log_route,
     auth_route,
     category_route,
     source_route,

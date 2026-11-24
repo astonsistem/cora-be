@@ -19,6 +19,7 @@ class Settings:
 
         self.customer_trash_retention_days = int(os.getenv("CUSTOMER_TRASH_RETENTION_DAYS", "90"))
         self.voucher_archive_after_days = int(os.getenv("VOUCHER_ARCHIVE_AFTER_DAYS", "90"))
+        self.activity_log_archive_after_days = int(os.getenv("ACTIVITY_LOG_ARCHIVE_AFTER_DAYS", "90"))
 
         self.public_rate_limit_per_minute = int(os.getenv("PUBLIC_RATE_LIMIT_PER_MINUTE", "240"))
         self.public_submit_rate_limit_per_minute = int(os.getenv("PUBLIC_SUBMIT_RATE_LIMIT_PER_MINUTE", "60"))
