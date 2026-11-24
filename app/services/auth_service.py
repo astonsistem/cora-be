@@ -1,6 +1,6 @@
 import jwt
 
-from app.exceptions import UnauthorizedError
+from app.exceptions import ForbiddenError, UnauthorizedError
 from app.models.users import Users
 from app.schemas.auth_schema import TokenResponse
 from app.core.security.security import PasswordHasher, TokenService, password_hasher, token_service
@@ -19,8 +19,10 @@ class AuthService:
 
     def login(self, username: str, password: str) -> TokenResponse:
         user = self.users.get_by_username(username)
-        if not user or not user.is_active or not self.hasher.verify(password, user.password):
+        if not user or not self.hasher.verify(password, user.password):
             raise UnauthorizedError("Invalid username or password")
+        if not user.is_active:
+            raise ForbiddenError("User tidak aktif. Silahkan hubungi admin")
         return self._issue(user)
 
     def refresh(self, refresh_token: str) -> TokenResponse:

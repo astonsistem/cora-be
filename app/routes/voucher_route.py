@@ -64,6 +64,14 @@ def update_voucher_design(
 ):
     return service.update_design(service.get_or_404(voucher_id), data.design)
 
+@router.post("/{voucher_id}/archive", response_model=VoucherResponse, dependencies=[Depends(admin_only)])
+def archive_voucher(voucher_id: uuid.UUID, service: VoucherService = Depends(get_voucher_service)):
+    return service.archive(service.get_or_404(voucher_id))
+
+@router.post("/{voucher_id}/unarchive", response_model=VoucherResponse, dependencies=[Depends(admin_only)])
+def unarchive_voucher(voucher_id: uuid.UUID, service: VoucherService = Depends(get_voucher_service)):
+    return service.unarchive(service.get_archived_or_404(voucher_id))
+
 @router.delete("/{voucher_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(admin_only)])
 def delete_voucher(voucher_id: uuid.UUID, service: VoucherService = Depends(get_voucher_service)):
     service.delete(service.get_or_404(voucher_id))

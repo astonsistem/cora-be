@@ -14,6 +14,7 @@ from app.services.branch_service import BranchService
 from app.services.category_service import CategoryService
 from app.services.company_service import CompanyService
 from app.services.customer_post_service import CustomerPostService
+from app.services.data_reset_service import DataResetService
 from app.services.customer_service import CustomerService
 from app.services.customer_sync_service import CustomerSyncService, SyncState
 from app.services.customer_visit_service import CustomerVisitService
@@ -52,6 +53,12 @@ def get_customer_service(
     current_user: Users = Depends(get_current_user),
 ) -> CustomerService:
     return CustomerService(db, current_user)
+
+def get_data_reset_service(
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
+) -> DataResetService:
+    return DataResetService(db, current_user)
 
 def get_customer_visit_service(
     db: Session = Depends(get_db),
