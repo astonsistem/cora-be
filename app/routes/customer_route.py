@@ -8,6 +8,7 @@ from app.dependencies import (
     get_customer_post_service,
     get_customer_service,
     get_customer_sync_service,
+    get_data_reset_service,
 )
 from app.exceptions import ConflictError
 from app.middleware.auth_middleware import admin_only, get_current_user, manager_only
@@ -24,6 +25,7 @@ from app.services.company_scope import CompanyScope
 from app.services.customer_post_service import CustomerPostService
 from app.services.customer_service import CustomerService
 from app.services.customer_sync_service import CustomerSyncService
+from app.services.data_reset_service import DataResetService
 
 router = ApiRouter(prefix="/customers", tags=["Customer"])
 
@@ -77,6 +79,14 @@ def list_deleted_customers(
 ):
     response.headers["X-Total-Count"] = str(service.count_all(q=q, branch_id=branch_id, deleted=True))
     return service.get_all(skip=skip, limit=limit, q=q, branch_id=branch_id, deleted=True)
+
+@router.get("/reset-impact", dependencies=[Depends(admin_only)])
+def reset_impact(branch_id: uuid.UUID | None = None, service: DataResetService = Depends(get_data_reset_service)):
+    return service.customer_impact(branch_id)
+
+@router.post("/reset", dependencies=[Depends(admin_only)])
+def reset_customers(branch_id: uuid.UUID | None = None, service: DataResetService = Depends(get_data_reset_service)):
+    return service.reset_customers(branch_id)
 
 @router.get("/{customer_id}", response_model=CustomerResponse)
 def get_customer(customer_id: uuid.UUID, service: CustomerService = Depends(get_customer_service)):

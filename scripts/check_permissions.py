@@ -53,7 +53,9 @@ EXPECTED = [
 
     # ASIS: preview dan sync hanya OM
     ("GET", "/asis/preview", OM),
-    ("GET", "/asis/credentials/", SUPER),
+    ("GET", "/asis/credentials/", OM),
+    ("GET", "/categories/reset-impact", OM),
+    ("GET", "/customers/reset-impact", OM),
 
     # Customer
     # Semua role boleh melihat customer sesuai cakupan datanya
@@ -98,6 +100,8 @@ EXPECTED = [
     ("POST", "/voucher-qrs/{id}/regenerate-code", OM),
     ("DELETE", "/voucher-qrs/{id}", OM),
     ("PATCH", "/vouchers/{id}/design", OM),
+    ("POST", "/vouchers/{id}/archive", OM),
+    ("POST", "/vouchers/{id}/unarchive", OM),
 
     ("GET", "/visit-questions/", OM),
     ("PUT", "/visit-questions/", OM),

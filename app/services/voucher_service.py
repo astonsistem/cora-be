@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -9,7 +9,7 @@ from app.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.models.branches import Branches
 from app.models.companies import Companies
 from app.models.users import Users
-from app.models.voucher import VoucherCodes, Vouchers
+from app.models.voucher import VoucherCodes, Vouchers, VoucherStatus
 from app.models.voucher_qr import VoucherQrs
 from app.schemas.voucher_schema import VoucherCreate, VoucherUpdate
 from app.services.code_generator import CodeGenerator
@@ -69,6 +69,36 @@ class VoucherService:
         )
         if voucher is None:
             raise NotFoundError("Voucher tidak ditemukan")
+        return voucher
+
+    def get_archived_or_404(self, voucher_id: uuid.UUID) -> Vouchers:
+        voucher = self.db.scalar(
+            self._scoped(select(Vouchers).where(Vouchers.voucher_id == voucher_id, Vouchers.archived_at.isnot(None)))
+        )
+        if voucher is None:
+            raise NotFoundError("Voucher tidak ada di arsip")
+        return voucher
+
+    def archive(self, voucher: Vouchers) -> Vouchers:
+        voucher.archived_at = datetime.now()
+        voucher.status = VoucherStatus.inactive.value
+        self._commit("Voucher tidak dapat diarsipkan")
+        self.db.refresh(voucher)
+        return voucher
+
+    def unarchive(self, voucher: Vouchers) -> Vouchers:
+        if voucher.date_expired < date.today():
+            raise ConflictError(
+                "Voucher sudah kedaluwarsa, jadi tidak bisa dikeluarkan dari arsip. Buat voucher baru."
+            )
+        if voucher.used_count >= voucher.quota_voucher:
+            raise ConflictError(
+                "Kuota voucher sudah habis, jadi tidak bisa dikeluarkan dari arsip. Buat voucher baru."
+            )
+        voucher.archived_at = None
+        voucher.status = VoucherStatus.active.value
+        self._commit("Voucher tidak dapat dikeluarkan dari arsip")
+        self.db.refresh(voucher)
         return voucher
 
     def _list_query(self, status: str | None, company_id: uuid.UUID | None):
