@@ -61,6 +61,8 @@ class CustomerResponse(CustomerBase):
 
     customer_id: uuid.UUID
     branch_id: uuid.UUID
+    branch_name: str | None = None
+    company_name: str | None = None
     asis_partner_id: str | None = None
     status: str
     created_by: uuid.UUID | None = None

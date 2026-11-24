@@ -4,7 +4,7 @@ from datetime import date
 from fastapi import Depends, Response, status
 
 from app.core.response.envelope import ApiRouter
-from app.dependencies import get_customer_visit_service
+from app.dependencies import get_activity_logger, get_customer_visit_service
 from app.middleware.auth_middleware import manager_only
 from app.schemas.customer_visit_schema import (
     CustomerVisitCreate,
@@ -13,6 +13,7 @@ from app.schemas.customer_visit_schema import (
     CustomerVisitUpdate,
 )
 from app.services import asis_post_service
+from app.services.activity_logger import Action, ActivityLogger, Module
 from app.services.customer_visit_service import CustomerVisitService
 
 router = ApiRouter(prefix="/customer-visits", tags=["Customer Visit"])
@@ -45,22 +46,44 @@ def get_visit(visit_id: uuid.UUID, service: CustomerVisitService = Depends(get_c
     return service.get_or_404(visit_id)
 
 @router.post("/", response_model=CustomerVisitResponse, status_code=status.HTTP_201_CREATED)
-def create_visit(data: CustomerVisitCreate, service: CustomerVisitService = Depends(get_customer_visit_service)):
-    return service.create(data)
+def create_visit(
+    data: CustomerVisitCreate,
+    service: CustomerVisitService = Depends(get_customer_visit_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
+):
+    visit = service.create(data)
+    activity.created(Module.customer_visit, "customer visit", visit.customer_name)
+    return visit
 
 @router.post("/{visit_id}/post-to-asis", response_model=CustomerVisitResponse, dependencies=[Depends(manager_only)])
-def post_visit_to_asis(visit_id: uuid.UUID, service: CustomerVisitService = Depends(get_customer_visit_service)):
+def post_visit_to_asis(
+    visit_id: uuid.UUID,
+    service: CustomerVisitService = Depends(get_customer_visit_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
+):
     visit = service.get_or_404(visit_id)
-    return asis_post_service.post_visit(service.db, visit, service.user)
+    posted = asis_post_service.post_visit(service.db, visit, service.user)
+    activity.record(Action.post, Module.asis, f'Posting customer "{posted.customer_name}" ke ASIS')
+    return posted
 
 @router.patch("/{visit_id}", response_model=CustomerVisitResponse)
 def update_visit(
     visit_id: uuid.UUID,
     data: CustomerVisitUpdate,
     service: CustomerVisitService = Depends(get_customer_visit_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
 ):
-    return service.update(service.get_or_404(visit_id), data)
+    visit = service.update(service.get_or_404(visit_id), data)
+    activity.updated(Module.customer_visit, "customer visit", visit.customer_name)
+    return visit
 
 @router.delete("/{visit_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_visit(visit_id: uuid.UUID, service: CustomerVisitService = Depends(get_customer_visit_service)):
-    service.delete(service.get_or_404(visit_id))
+def delete_visit(
+    visit_id: uuid.UUID,
+    service: CustomerVisitService = Depends(get_customer_visit_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
+):
+    visit = service.get_or_404(visit_id)
+    name = visit.customer_name
+    service.delete(visit)
+    activity.deleted(Module.customer_visit, "customer visit", name)

@@ -1,11 +1,13 @@
 from functools import lru_cache
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
 from app.core.database.database import get_db
 from app.middleware.auth_middleware import get_current_user
 from app.models.users import Users
+from app.services.activity_log_service import ActivityLogService
+from app.services.activity_logger import ActivityLogger
 from app.services.asis_credential_service import AsisCredentialService
 from app.services.asis_sync_service import AsisSyncService
 from app.services.company_scope import CompanyScope
@@ -29,6 +31,19 @@ from app.services.voucher_issue_service import VoucherIssueService
 from app.services.voucher_qr_service import VoucherQrService
 from app.services.voucher_redeem_service import VoucherRedeemService
 from app.services.voucher_service import VoucherService
+
+def get_activity_log_service(
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
+) -> ActivityLogService:
+    return ActivityLogService(db, current_user)
+
+def get_activity_logger(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
+) -> ActivityLogger:
+    return ActivityLogger(db, current_user, request)
 
 def get_branch_service(db: Session = Depends(get_db)) -> BranchService:
     return BranchService(db)

@@ -109,7 +109,7 @@ class CustomerSyncService:
                     if branch.company_id not in company_categories:
                         company_categories[branch.company_id] = self._categories_of(db, branch.company_id)
                     self._sync_branch(
-                        db, provider.for_company(branch.company_id), branch, company_categories[branch.company_id]
+                        db, provider.for_branch(branch), branch, company_categories[branch.company_id]
                     )
                     self.state.bump(branches_done=1)
         except Exception as e:

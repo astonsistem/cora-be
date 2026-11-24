@@ -3,10 +3,11 @@ import uuid
 from fastapi import Depends, Response, status
 
 from app.core.response.envelope import ApiRouter
-from app.dependencies import get_branch_service
+from app.dependencies import get_activity_logger, get_branch_service
 from app.middleware.auth_middleware import admin_only, get_current_user
 from app.models.users import Users
 from app.schemas.branch_schema import BranchCreate, BranchResponse, BranchUpdate
+from app.services.activity_logger import Action, ActivityLogger, Module
 from app.services.branch_service import BranchService
 
 router = ApiRouter(prefix="/branches", tags=["Branch"])
@@ -45,8 +46,11 @@ def create_item(
     data: BranchCreate,
     service: BranchService = Depends(get_branch_service),
     current_user: Users = Depends(admin_only),
+    activity: ActivityLogger = Depends(get_activity_logger),
 ):
-    return service.create_as(current_user, data)
+    branch = service.create_as(current_user, data)
+    activity.created(Module.master, "branch", branch.branch_name)
+    return branch
 
 @router.patch("/{branch_id}", response_model=BranchResponse)
 def update_item(
@@ -54,21 +58,31 @@ def update_item(
     data: BranchUpdate,
     service: BranchService = Depends(get_branch_service),
     current_user: Users = Depends(admin_only),
+    activity: ActivityLogger = Depends(get_activity_logger),
 ):
-    return service.update_as(current_user, service.get_for_or_404(current_user, branch_id), data)
+    branch = service.update_as(current_user, service.get_for_or_404(current_user, branch_id), data)
+    activity.updated(Module.master, "branch", branch.branch_name)
+    return branch
 
 @router.delete("/{branch_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_item(
     branch_id: uuid.UUID,
     service: BranchService = Depends(get_branch_service),
     current_user: Users = Depends(admin_only),
+    activity: ActivityLogger = Depends(get_activity_logger),
 ):
-    service.delete(service.get_for_or_404(current_user, branch_id))
+    branch = service.get_for_or_404(current_user, branch_id)
+    name = branch.branch_name
+    service.delete(branch)
+    activity.deleted(Module.master, "branch", name)
 
 @router.post("/{branch_id}/restore", response_model=BranchResponse)
 def restore_item(
     branch_id: uuid.UUID,
     service: BranchService = Depends(get_branch_service),
     current_user: Users = Depends(admin_only),
+    activity: ActivityLogger = Depends(get_activity_logger),
 ):
-    return service.restore(service.get_deleted_for_or_404(current_user, branch_id))
+    branch = service.restore(service.get_deleted_for_or_404(current_user, branch_id))
+    activity.restored(Module.master, "branch", branch.branch_name)
+    return branch

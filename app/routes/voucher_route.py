@@ -3,10 +3,11 @@ import uuid
 from fastapi import Depends, Response, status
 
 from app.core.response.envelope import ApiRouter
-from app.dependencies import get_voucher_service
+from app.dependencies import get_activity_logger, get_voucher_service
 from app.middleware.auth_middleware import admin_only, manager_only
 from app.models.voucher import VoucherStatus
 from app.schemas.voucher_schema import VoucherCreate, VoucherDesignUpdate, VoucherResponse, VoucherUpdate
+from app.services.activity_logger import Action, ActivityLogger, Module
 from app.services.voucher_service import VoucherService
 
 router = ApiRouter(prefix="/vouchers", tags=["Voucher"])
@@ -41,8 +42,14 @@ def list_archived_vouchers(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(admin_only)],
 )
-def create_voucher(data: VoucherCreate, service: VoucherService = Depends(get_voucher_service)):
-    return service.create(data)
+def create_voucher(
+    data: VoucherCreate,
+    service: VoucherService = Depends(get_voucher_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
+):
+    voucher = service.create(data)
+    activity.record(Action.create, Module.voucher, f'Membuat voucher "{voucher.voucher_name}"')
+    return voucher
 
 @router.get("/{voucher_id}", response_model=VoucherResponse, dependencies=[Depends(manager_only)])
 def get_voucher(voucher_id: uuid.UUID, service: VoucherService = Depends(get_voucher_service)):
@@ -53,25 +60,50 @@ def update_voucher(
     voucher_id: uuid.UUID,
     data: VoucherUpdate,
     service: VoucherService = Depends(get_voucher_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
 ):
-    return service.update(service.get_or_404(voucher_id), data)
+    voucher = service.update(service.get_or_404(voucher_id), data)
+    activity.record(Action.update, Module.voucher, f'Mengubah voucher "{voucher.voucher_name}"')
+    return voucher
 
 @router.patch("/{voucher_id}/design", response_model=VoucherResponse, dependencies=[Depends(admin_only)])
 def update_voucher_design(
     voucher_id: uuid.UUID,
     data: VoucherDesignUpdate,
     service: VoucherService = Depends(get_voucher_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
 ):
-    return service.update_design(service.get_or_404(voucher_id), data.design)
+    voucher = service.update_design(service.get_or_404(voucher_id), data.design)
+    activity.record(Action.update, Module.voucher, f'Mengubah desain voucher "{voucher.voucher_name}"')
+    return voucher
 
 @router.post("/{voucher_id}/archive", response_model=VoucherResponse, dependencies=[Depends(admin_only)])
-def archive_voucher(voucher_id: uuid.UUID, service: VoucherService = Depends(get_voucher_service)):
-    return service.archive(service.get_or_404(voucher_id))
+def archive_voucher(
+    voucher_id: uuid.UUID,
+    service: VoucherService = Depends(get_voucher_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
+):
+    voucher = service.archive(service.get_or_404(voucher_id))
+    activity.record(Action.update, Module.voucher, f'Mengarsipkan voucher "{voucher.voucher_name}"')
+    return voucher
 
 @router.post("/{voucher_id}/unarchive", response_model=VoucherResponse, dependencies=[Depends(admin_only)])
-def unarchive_voucher(voucher_id: uuid.UUID, service: VoucherService = Depends(get_voucher_service)):
-    return service.unarchive(service.get_archived_or_404(voucher_id))
+def unarchive_voucher(
+    voucher_id: uuid.UUID,
+    service: VoucherService = Depends(get_voucher_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
+):
+    voucher = service.unarchive(service.get_archived_or_404(voucher_id))
+    activity.record(Action.update, Module.voucher, f'Mengaktifkan kembali voucher "{voucher.voucher_name}"')
+    return voucher
 
 @router.delete("/{voucher_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(admin_only)])
-def delete_voucher(voucher_id: uuid.UUID, service: VoucherService = Depends(get_voucher_service)):
-    service.delete(service.get_or_404(voucher_id))
+def delete_voucher(
+    voucher_id: uuid.UUID,
+    service: VoucherService = Depends(get_voucher_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
+):
+    voucher = service.get_or_404(voucher_id)
+    name = voucher.voucher_name
+    service.delete(voucher)
+    activity.record(Action.delete, Module.voucher, f'Menghapus voucher "{name}"')
