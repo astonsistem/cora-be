@@ -3,11 +3,12 @@ import uuid
 from fastapi import Depends, Response, status
 
 from app.core.response.envelope import ApiRouter
-from app.dependencies import get_category_service
+from app.dependencies import get_category_service, get_data_reset_service
 from app.middleware.auth_middleware import admin_only, get_current_user
 from app.models.users import Users
 from app.schemas.category_schema import CategoryCreate, CategoryResponse, CategoryUpdate
 from app.services.category_service import CategoryService
+from app.services.data_reset_service import DataResetService
 
 router = ApiRouter(prefix="/categories", tags=["Category"])
 
@@ -33,6 +34,14 @@ def list_deleted_items(
 ):
     response.headers["X-Total-Count"] = str(service.count_deleted_for(current_user, company_id=company_id, q=q))
     return service.get_deleted_for(current_user, company_id=company_id, skip=skip, limit=limit, q=q)
+
+@router.get("/reset-impact", dependencies=[Depends(admin_only)])
+def reset_impact(company_id: uuid.UUID | None = None, service: DataResetService = Depends(get_data_reset_service)):
+    return service.category_impact(company_id)
+
+@router.post("/reset", dependencies=[Depends(admin_only)])
+def reset_categories(company_id: uuid.UUID | None = None, service: DataResetService = Depends(get_data_reset_service)):
+    return service.reset_categories(company_id)
 
 @router.get("/{category_id}", response_model=CategoryResponse)
 def get_item(
