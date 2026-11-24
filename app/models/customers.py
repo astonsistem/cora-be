@@ -52,6 +52,14 @@ class Customers(Base):
         return value
 
     @property
+    def branch_name(self) -> str | None:
+        return self.branch.branch_name if self.branch else None
+
+    @property
+    def company_name(self) -> str | None:
+        return self.branch.company.company_name if self.branch and self.branch.company else None
+
+    @property
     def is_posted(self) -> bool:
         return bool(self.asis_partner_id)
 

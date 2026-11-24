@@ -32,7 +32,7 @@ class CustomerPostService:
         # Dibuat saat pertama dipakai, supaya request yang gagal validasi lokal tidak menyentuh ASIS.
         if self._gateway is not None:
             return self._gateway
-        return self._provider.for_company(customer.branch.company_id)
+        return self._provider.for_branch(customer.branch)
 
     @staticmethod
     def build_payload(customer: Customers) -> dict:

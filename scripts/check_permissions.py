@@ -54,6 +54,7 @@ EXPECTED = [
     # ASIS: preview dan sync hanya OM
     ("GET", "/asis/preview", OM),
     ("GET", "/asis/credentials/", OM),
+    ("GET", "/asis/credentials/branches", OM),
     ("GET", "/categories/reset-impact", OM),
     ("GET", "/customers/reset-impact", OM),
 
