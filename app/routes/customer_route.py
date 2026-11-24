@@ -4,6 +4,7 @@ from fastapi import BackgroundTasks, Depends, Query, Response, status
 
 from app.core.response.envelope import ApiRouter
 from app.dependencies import (
+    get_activity_logger,
     get_branch_service,
     get_customer_post_service,
     get_customer_service,
@@ -20,6 +21,7 @@ from app.schemas.customer_schema import (
     CustomerSyncRequest,
     CustomerUpdate,
 )
+from app.services.activity_logger import Action, ActivityLogger, Module
 from app.services.branch_service import BranchService
 from app.services.company_scope import CompanyScope
 from app.services.customer_post_service import CustomerPostService
@@ -36,6 +38,7 @@ def sync_customers(
     branches: BranchService = Depends(get_branch_service),
     sync: CustomerSyncService = Depends(get_customer_sync_service),
     current_user: Users = Depends(get_current_user),
+    activity: ActivityLogger = Depends(get_activity_logger),
 ):
     scope = CompanyScope(current_user)
     company_id = scope.company_id
@@ -45,6 +48,7 @@ def sync_customers(
     if not sync.start(branch_id):
         raise ConflictError("Sync customer sedang berjalan")
     background_tasks.add_task(sync.run, branch_id, company_id)
+    activity.record(Action.sync, Module.customer, "Sinkronisasi customer dari ASIS")
     return sync.status()
 
 
@@ -85,38 +89,68 @@ def reset_impact(branch_id: uuid.UUID | None = None, service: DataResetService =
     return service.customer_impact(branch_id)
 
 @router.post("/reset", dependencies=[Depends(admin_only)])
-def reset_customers(branch_id: uuid.UUID | None = None, service: DataResetService = Depends(get_data_reset_service)):
-    return service.reset_customers(branch_id)
+def reset_customers(
+    branch_id: uuid.UUID | None = None,
+    service: DataResetService = Depends(get_data_reset_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
+):
+    result = service.reset_customers(branch_id)
+    activity.record(Action.delete, Module.customer, "Mereset seluruh data customer")
+    return result
 
 @router.get("/{customer_id}", response_model=CustomerResponse)
 def get_customer(customer_id: uuid.UUID, service: CustomerService = Depends(get_customer_service)):
     return service.get_or_404(customer_id)
 
 @router.post("/", response_model=CustomerResponse, status_code=status.HTTP_201_CREATED)
-def create_customer(data: CustomerCreate, service: CustomerService = Depends(get_customer_service)):
-    return service.create(data)
+def create_customer(
+    data: CustomerCreate,
+    service: CustomerService = Depends(get_customer_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
+):
+    customer = service.create(data)
+    activity.created(Module.customer, "customer", customer.name)
+    return customer
 
 @router.patch("/{customer_id}", response_model=CustomerResponse)
 def update_customer(
     customer_id: uuid.UUID,
     data: CustomerUpdate,
     service: CustomerService = Depends(get_customer_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
 ):
-    return service.update(service.get_or_404(customer_id), data)
+    customer = service.update(service.get_or_404(customer_id), data)
+    activity.updated(Module.customer, "customer", customer.name)
+    return customer
 
 @router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(admin_only)])
-def delete_customer(customer_id: uuid.UUID, service: CustomerService = Depends(get_customer_service)):
-    service.delete(service.get_or_404(customer_id))
+def delete_customer(
+    customer_id: uuid.UUID,
+    service: CustomerService = Depends(get_customer_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
+):
+    customer = service.get_or_404(customer_id)
+    name = customer.name
+    service.delete(customer)
+    activity.deleted(Module.customer, "customer", name)
 
 @router.post("/{customer_id}/restore", response_model=CustomerResponse, dependencies=[Depends(admin_only)])
-def restore_customer(customer_id: uuid.UUID, service: CustomerService = Depends(get_customer_service)):
-    return service.restore(service.get_deleted_or_404(customer_id))
+def restore_customer(
+    customer_id: uuid.UUID,
+    service: CustomerService = Depends(get_customer_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
+):
+    customer = service.restore(service.get_deleted_or_404(customer_id))
+    activity.restored(Module.customer, "customer", customer.name)
+    return customer
 
 @router.post("/{customer_id}/post-to-asis", response_model=CustomerPostResponse, dependencies=[Depends(manager_only)])
 def post_customer_to_asis(
     customer_id: uuid.UUID,
     service: CustomerService = Depends(get_customer_service),
     post_service: CustomerPostService = Depends(get_customer_post_service),
+    activity: ActivityLogger = Depends(get_activity_logger),
 ):
     customer, linked_existing = post_service.post(service.get_or_404(customer_id))
+    activity.record(Action.post, Module.asis, f'Posting customer "{customer.name}" ke ASIS')
     return CustomerPostResponse.model_validate(customer).model_copy(update={"linked_existing": linked_existing})

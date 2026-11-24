@@ -27,6 +27,7 @@ class ResponseMessages:
     CUSTOM = {
         ("POST", "/auth/login"): "Login successful",
         ("POST", "/auth/refresh"): "Token refreshed successfully",
+        ("POST", "/auth/logout"): "Logout successful",
         ("GET", "/auth/me"): "Profile retrieved successfully",
         ("PUT", "/users/{user_id}/photo"): "Photo uploaded successfully",
         ("DELETE", "/users/{user_id}/photo"): "Photo deleted successfully",

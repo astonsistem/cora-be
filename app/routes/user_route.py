@@ -3,11 +3,12 @@ import uuid
 from fastapi import Depends, File, Response, UploadFile, status
 
 from app.core.response.envelope import ApiRouter
-from app.dependencies import get_user_service
+from app.dependencies import get_activity_logger, get_user_service
 from app.exceptions import BadRequestError, ForbiddenError, NotFoundError, PayloadTooLargeError, UnsupportedMediaError
 from app.middleware.auth_middleware import admin_only, get_current_user
 from app.models.users import UserRole, Users
 from app.schemas.user_schema import UserCreate, UserResponse, UserUpdate
+from app.services.activity_logger import Action, ActivityLogger, Module
 from app.services.user_service import UserService
 
 router = ApiRouter(prefix="/users", tags=["User"])
@@ -17,6 +18,9 @@ MAX_PHOTO_BYTES = 2 * 1024 * 1024
 def _require_self_or_om(current_user: Users, user_id: uuid.UUID):
     if not current_user.is_admin and current_user.user_id != user_id:
         raise ForbiddenError("You do not have permission to perform this action")
+
+def _full_name(user: Users) -> str:
+    return f"{user.first_name} {user.last_name}".strip()
 
 def _sniff_image_type(data: bytes) -> str | None:
     if data.startswith(b"\xff\xd8\xff"):
@@ -93,8 +97,11 @@ def create_user(
     data: UserCreate,
     service: UserService = Depends(get_user_service),
     current_user: Users = Depends(admin_only),
+    activity: ActivityLogger = Depends(get_activity_logger),
 ):
-    return service.create_as(current_user, data)
+    user = service.create_as(current_user, data)
+    activity.created(Module.user, "user", _full_name(user))
+    return user
 
 @router.patch("/{user_id}", response_model=UserResponse)
 def update_user(
@@ -102,13 +109,20 @@ def update_user(
     data: UserUpdate,
     service: UserService = Depends(get_user_service),
     current_user: Users = Depends(admin_only),
+    activity: ActivityLogger = Depends(get_activity_logger),
 ):
-    return service.update_as(current_user, service.get_or_404(user_id), data)
+    user = service.update_as(current_user, service.get_or_404(user_id), data)
+    activity.updated(Module.user, "data user", _full_name(user))
+    return user
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
     user_id: uuid.UUID,
     service: UserService = Depends(get_user_service),
     current_user: Users = Depends(admin_only),
+    activity: ActivityLogger = Depends(get_activity_logger),
 ):
-    service.delete_as(current_user, service.get_or_404(user_id))
+    user = service.get_or_404(user_id)
+    name = _full_name(user)
+    service.delete_as(current_user, user)
+    activity.deleted(Module.user, "user", name)

@@ -10,3 +10,4 @@ from app.models.voucher_qr import VoucherQrs
 from app.models.visit_question import VisitQuestions
 from app.models.voucher import Vouchers, VoucherCodes, VoucherClaims
 from app.models.asis_credential import AsisCredentials
+from app.models.activity_log import ActivityLogs

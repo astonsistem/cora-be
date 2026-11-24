@@ -79,6 +79,8 @@ class DataResetService:
         return CategoryService._scoped(self.user, select(Category.category_id), company_id)
 
     def _customer_ids(self, branch_id: uuid.UUID | None):
+        if self.user.is_superadmin and branch_id is None:
+            raise BadRequestError("branch_id wajib diisi")
         query = CustomerService(self.db, self.user)._scope(select(Customers.customer_id))
         return query.where(Customers.branch_id == branch_id) if branch_id else query
 

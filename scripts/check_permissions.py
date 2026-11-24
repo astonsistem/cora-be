@@ -25,6 +25,10 @@ EXPECTED = [
     ("GET", "/auth/me", ALL),
 
     # Master data: semua role boleh membaca (scope data tetap berlaku), hanya OM yang mengubah
+    ("GET", "/activity-logs/", OM),
+    ("GET", "/activity-logs/filter-options", OM),
+    ("GET", "/activity-logs/archived", SUPER),
+
     ("GET", "/users/", ALL),
     ("GET", "/users/{id}", OM),
     ("POST", "/users/", OM),
@@ -54,6 +58,7 @@ EXPECTED = [
     # ASIS: preview dan sync hanya OM
     ("GET", "/asis/preview", OM),
     ("GET", "/asis/credentials/", OM),
+    ("GET", "/asis/credentials/branches", OM),
     ("GET", "/categories/reset-impact", OM),
     ("GET", "/customers/reset-impact", OM),
 

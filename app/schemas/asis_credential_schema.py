@@ -22,6 +22,16 @@ class AsisCredentialSet(BaseModel):
         return value or None
 
 
+class AsisBranchCredentialResponse(BaseModel):
+    branch_id: uuid.UUID
+    branch_name: str
+    company_id: uuid.UUID
+    company_name: str
+    username: str | None = None
+    is_configured: bool
+    last_verified_at: datetime | None = None
+
+
 class AsisCredentialResponse(BaseModel):
     company_id: uuid.UUID
     company_name: str
