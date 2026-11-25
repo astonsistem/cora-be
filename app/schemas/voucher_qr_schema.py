@@ -29,6 +29,7 @@ class VoucherQrUpdate(BaseModel):
     voucher_mode: VoucherMode | None = None
     voucher_ids: list[uuid.UUID] | None = Field(default=None, min_length=1)
     is_active: bool | None = None
+    is_locked: bool | None = None
 
 
 class VoucherQrResponse(VoucherQrBase):
@@ -37,6 +38,7 @@ class VoucherQrResponse(VoucherQrBase):
     qr_id: uuid.UUID
     company_id: uuid.UUID
     code: str
+    is_locked: bool = False
     created_at: datetime
     updated_at: datetime
 
