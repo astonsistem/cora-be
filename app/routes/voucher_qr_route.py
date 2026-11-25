@@ -41,8 +41,13 @@ def update_qr(
     service: VoucherQrService = Depends(get_voucher_qr_service),
     activity: ActivityLogger = Depends(get_activity_logger),
 ):
+    changes = data.model_dump(exclude_unset=True)
     qr = service.update(service.get_or_404(qr_id), data)
-    activity.record(Action.update, Module.qr, f'Mengubah pengaturan QR "{qr.name}"')
+    if set(changes) == {"is_locked"} and changes["is_locked"] is not None:
+        verb = "Mengunci" if qr.is_locked else "Membuka kunci"
+        activity.record(Action.update, Module.qr, f'{verb} kode QR "{qr.name}"')
+    else:
+        activity.record(Action.update, Module.qr, f'Mengubah pengaturan QR "{qr.name}"')
     return qr
 
 @router.post("/{qr_id}/regenerate-code", response_model=VoucherQrResponse, dependencies=[Depends(admin_only)])

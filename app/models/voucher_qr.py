@@ -27,6 +27,7 @@ class VoucherQrs(Base):
     voucher_ids = Column(ARRAY(UUID(as_uuid=True)), nullable=False, default=list, server_default="{}")
     code = Column(String(20), nullable=False, unique=True)
     is_active = Column(Boolean, nullable=False, default=True, server_default="true")
+    is_locked = Column(Boolean, nullable=False, default=False, server_default="false")
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
