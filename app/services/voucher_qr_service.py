@@ -103,7 +103,7 @@ class VoucherQrService(CrudService[VoucherQrs]):
         )
 
     def _prepare_update(self, obj: VoucherQrs, values: dict) -> dict:
-        for key in ("name", "source_id", "voucher_mode", "voucher_ids", "is_active"):
+        for key in ("name", "source_id", "voucher_mode", "voucher_ids", "is_active", "is_locked"):
             if key in values and values[key] is None:
                 values.pop(key)
         self._ensure_references(obj.company_id, values.get("source_id"), values.get("category_id"))
@@ -116,6 +116,8 @@ class VoucherQrService(CrudService[VoucherQrs]):
         return values
 
     def regenerate_code(self, qr: VoucherQrs) -> VoucherQrs:
+        if qr.is_locked:
+            raise ConflictError("QR dikunci. Buka kunci terlebih dahulu untuk generate ulang")
         qr.code = self._unique_code()
         self._commit()
         self.db.refresh(qr)
