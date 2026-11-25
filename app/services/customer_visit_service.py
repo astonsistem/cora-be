@@ -1,13 +1,13 @@
 import uuid
 from datetime import date
 
-from sqlalchemy import distinct, func, select
+from sqlalchemy import case, distinct, func, select, update
 from sqlalchemy.orm import Session
 
-from app.exceptions import BadRequestError, ConflictError, ForbiddenError
+from app.exceptions import BadRequestError, ForbiddenError
 from app.models.customer_visits import CustomerVisits
 from app.models.users import Users
-from app.models.voucher import ClaimStatus, VoucherClaims, VoucherCodes
+from app.models.voucher import VoucherCodes, Vouchers
 from app.schemas.customer_visit_schema import CustomerVisitCreate
 from app.services.base_service import CrudService
 from app.services.category_guard import CategoryGuard
@@ -82,16 +82,33 @@ class CustomerVisitService(CrudService[CustomerVisits]):
 
     def delete(self, visit: CustomerVisits) -> None:
         codes = list(self.db.scalars(select(VoucherCodes).where(VoucherCodes.visit_id == visit.visit_id)))
-        claims = [claim for code in codes for claim in code.claims]
-        if any(claim.status != ClaimStatus.cancelled.value for claim in claims):
-            raise ConflictError("Visit ini sudah punya voucher yang diklaim atau ditukar, jadi tidak bisa dihapus")
-        for claim in claims:
-            self.db.delete(claim)
+        for code in codes:
+            for claim in code.claims:
+                self.db.delete(claim)
         self.db.flush()
         for code in codes:
             self.db.delete(code)
         self.db.flush()
+        self._release_quota(codes)
         super().delete(visit)
+
+    def _release_quota(self, codes: list[VoucherCodes]) -> None:
+        released: dict[uuid.UUID, int] = {}
+        for code in codes:
+            released[code.voucher_id] = released.get(code.voucher_id, 0) + 1
+        for voucher_id, count in released.items():
+            self.db.execute(
+                update(Vouchers)
+                .where(Vouchers.voucher_id == voucher_id)
+                .values(
+                    used_count=func.greatest(Vouchers.used_count - count, 0),
+                    sold_out_at=case(
+                        (func.greatest(Vouchers.used_count - count, 0) < Vouchers.quota_voucher, None),
+                        else_=Vouchers.sold_out_at,
+                    ),
+                )
+            )
+        self.db.flush()
 
     def _build(self, data: CustomerVisitCreate) -> CustomerVisits:
         if data.customer_id:
